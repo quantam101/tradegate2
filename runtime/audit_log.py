@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import dataclasses
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -16,7 +17,7 @@ class AuditEvent:
     status: str
     details: Dict[str, Any]
     correlation_id: Optional[str] = None
-    timestamp: float = time.time()
+    timestamp: float = dataclasses.field(default_factory=time.time)
 
 
 class AuditLog:

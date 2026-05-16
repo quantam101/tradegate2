@@ -26,7 +26,7 @@ class ApprovalGate:
 
     def require(self, action: str, reason: str, payload: Dict[str, Any]) -> str:
         approvals = self._load()
-        approval_id = f"approval-{int(time.time() * 1000)}"
+        approval_id = f"approval-{int(time.time() * 1000)}-{os.urandom(4).hex()}"
         approvals[approval_id] = {
             "action": action,
             "reason": reason,

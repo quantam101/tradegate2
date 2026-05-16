@@ -21,8 +21,8 @@ class VectorCache:
     def __init__(self, path: str | None = None, embedding_dim: int | None = None, match_floor: float | None = None) -> None:
         self.path = Path(path or os.getenv("GMAOS_VECTOR_CACHE", "./data/vector_cache.sqlite3"))
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.embedding_dim = embedding_dim or int(os.getenv("GMAOS_EMBEDDING_DIM", "384"))
-        self.match_floor = match_floor or float(os.getenv("GMAOS_SEMANTIC_MATCH_FLOOR", "0.96"))
+        self.embedding_dim = embedding_dim if embedding_dim is not None else int(os.getenv("GMAOS_EMBEDDING_DIM", "384"))
+        self.match_floor = match_floor if match_floor is not None else float(os.getenv("GMAOS_SEMANTIC_MATCH_FLOOR", "0.96"))
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:

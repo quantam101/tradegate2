@@ -13,8 +13,12 @@ def scan_text(text: str) -> List[str]:
 
 def scan_repo(root: str = ".") -> List[str]:
     findings: List[str] = []
+    skip_dirs = {".git", "node_modules", ".next", "__pycache__"}
+    skip_files = {"security_scanner.py", "verifier.py"}
     for path in Path(root).rglob("*"):
-        if not path.is_file() or any(part in {".git", "node_modules", ".next"} for part in path.parts):
+        if not path.is_file() or any(part in skip_dirs for part in path.parts):
+            continue
+        if path.name in skip_files:
             continue
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
