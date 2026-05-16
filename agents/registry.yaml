@@ -1,0 +1,80 @@
+agents:
+  - id: sovereign-orchestrator
+    name: Sovereign Orchestrator
+    version: 0.1.0
+    mission: Convert objectives into executable workflows.
+    max_cost_usd: 0
+    allowed_connectors: [local_files]
+    forbidden_actions: [any_cost, public_post, email_send, production_deploy, repo_merge]
+    approval_required_actions: [paid_api_call, repo_write, production_deploy]
+    verifier_required: true
+
+  - id: free-tier-cost-guard
+    name: Free-Tier Cost Guard Agent
+    version: 0.1.0
+    mission: Prevent accidental spending and block paid resources.
+    max_cost_usd: 0
+    allowed_connectors: [local_files]
+    forbidden_actions: [paid_api_call, paid_compute_create, paid_storage_create]
+    approval_required_actions: [any_cost]
+    verifier_required: false
+
+  - id: local-research
+    name: Local Research Agent
+    version: 0.1.0
+    mission: Produce source-aware research drafts using browser/local tools.
+    max_cost_usd: 0
+    allowed_connectors: [playwright_local, local_files]
+    forbidden_actions: [paid_api_call, public_post]
+    approval_required_actions: [external_account_login]
+    verifier_required: true
+
+  - id: local-document-intelligence
+    name: Local Document Intelligence Agent
+    version: 0.1.0
+    mission: Process local documents into summaries, action items, and SOP drafts.
+    max_cost_usd: 0
+    allowed_connectors: [local_files]
+    forbidden_actions: [upload_confidential_to_third_party]
+    approval_required_actions: [external_share]
+    verifier_required: true
+
+  - id: local-content-repurposing
+    name: Local Content Repurposing Agent
+    version: 0.1.0
+    mission: Convert media into transcripts, captions, and draft posts using local tools.
+    max_cost_usd: 0
+    allowed_connectors: [local_files]
+    forbidden_actions: [public_post, paid_processing]
+    approval_required_actions: [publish]
+    verifier_required: true
+
+  - id: local-engineering
+    name: Local Engineering Agent
+    version: 0.1.0
+    mission: Run deterministic code checks, patch plans, and test evidence.
+    max_cost_usd: 0
+    allowed_connectors: [local_files, github_read]
+    forbidden_actions: [repo_merge, production_deploy]
+    approval_required_actions: [repo_write, dependency_upgrade]
+    verifier_required: true
+
+  - id: production-readiness
+    name: Production Readiness Agent
+    version: 0.1.0
+    mission: Block release until security, QA, backup, mobile, SEO, and no-spend gates pass.
+    max_cost_usd: 0
+    allowed_connectors: [local_files]
+    forbidden_actions: [production_deploy_without_gate]
+    approval_required_actions: [production_deploy]
+    verifier_required: false
+
+  - id: lifelong-catch-correct
+    name: Lifelong Catch and Correct Agent
+    version: 0.1.0
+    mission: Capture errors, corrections, changelog entries, and reusable rules.
+    max_cost_usd: 0
+    allowed_connectors: [local_files]
+    forbidden_actions: [global_policy_change_without_approval]
+    approval_required_actions: [policy_update]
+    verifier_required: true

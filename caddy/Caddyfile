@@ -1,0 +1,53 @@
+{
+  email {$ACME_EMAIL}
+}
+
+alreadyherellc.com, www.alreadyherellc.com {
+  encode gzip zstd
+  reverse_proxy web:3000
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+  }
+}
+
+app.alreadyherellc.com {
+  encode gzip zstd
+  reverse_proxy web:3000
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+  }
+}
+
+api.alreadyherellc.com {
+  encode gzip zstd
+  reverse_proxy runtime:8080
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "strict-origin-when-cross-origin"
+  }
+}
+
+status.alreadyherellc.com {
+  encode gzip zstd
+  reverse_proxy uptime-kuma:3001
+}
+
+# Keep n8n private until authentication and access controls are enabled.
+# To expose later, uncomment only after setting N8N_BASIC_AUTH_ACTIVE=true or using Cloudflare Access.
+# n8n.alreadyherellc.com {
+#   encode gzip zstd
+#   reverse_proxy n8n:5678
+# }

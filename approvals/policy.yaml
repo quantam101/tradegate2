@@ -1,0 +1,28 @@
+approval_policy:
+  default: deny
+  approval_store: /data/approvals.json
+
+always_requires_approval:
+  - any_cost
+  - paid_api_call
+  - production_deploy
+  - repo_merge
+  - account_setting_change
+  - email_send
+  - public_post
+  - client_outreach
+  - payment_action
+  - legal_tax_filing
+  - contract_execution
+  - bid_submission
+  - destructive_file_action
+  - secret_rotation
+  - permission_expansion
+
+allowed_without_approval:
+  - local_research_draft
+  - local_document_summary
+  - local_sop_draft
+  - local_code_check
+  - local_healthcheck
+  - local_backup_dry_run

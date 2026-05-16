@@ -1,0 +1,12 @@
+module:
+  id: document-intelligence
+  name: document-intelligence
+  version: 0.1.0
+  state: scaffold
+  cost_mode: zero_spend
+  enabled: true
+  requires_approval_for:
+    - external_write
+    - paid_call
+    - production_change
+  healthcheck: /api/health/document-intelligence

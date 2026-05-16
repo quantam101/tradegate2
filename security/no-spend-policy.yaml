@@ -1,0 +1,30 @@
+no_spend_policy:
+  mode: strict_zero_spend
+  paid_api_calls: false
+  paid_cloud_resources: false
+  paid_saas_tasks: false
+  paid_email_sms: false
+  paid_storage_expansion: false
+  paid_compute_expansion: false
+  require_human_approval_for_any_cost: true
+  block_unknown_connectors: true
+  fail_closed: true
+
+blocked_actions:
+  - openai_api_call
+  - anthropic_api_call
+  - perplexity_api_call
+  - devin_task
+  - manus_task
+  - opusclip_paid_processing
+  - zapier_paid_task
+  - stripe_mutation
+  - email_send
+  - sms_send
+  - public_post
+  - production_deploy
+  - domain_purchase
+  - paid_storage_create
+  - paid_compute_create
+  - secret_rotation
+  - file_delete_recursive
