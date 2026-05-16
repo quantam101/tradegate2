@@ -1,0 +1,44 @@
+system:
+  id: gmaos-eaos-core
+  name: GMAOS / EAOS Zero-Spend Execution Fabric
+  version: 0.1.0
+  mode: strict_zero_spend
+  default_runtime: local_first
+  fail_closed: true
+
+paths:
+  audit_log: /data/logs/audit.jsonl
+  approval_db: /data/approvals.json
+  vector_cache: /data/vector_cache.sqlite3
+
+runtime:
+  max_cost_usd: 0
+  paid_adapters_enabled: false
+  external_execution_enabled: false
+  require_verifier: true
+  require_security_scan: true
+  require_no_spend_check: true
+  semantic_match_floor: 0.96
+  embedding_dim: 384
+
+production_gate:
+  ci_passes: true
+  lint_passes: true
+  typecheck_passes: true
+  tests_pass: true
+  security_scan_passes: true
+  no_secrets_in_repo: true
+  no_paid_adapters_enabled: true
+  no_spend_policy_active: true
+  approval_gate_active: true
+  audit_log_active: true
+  backups_tested: true
+  restore_tested: true
+  uptime_monitor_active: true
+  https_active: true
+  firewall_active: true
+  mobile_smoke_test_passes: true
+  seo_metadata_present: true
+  sitemap_present: true
+  rollback_documented: true
+  placeholder_scan_passes: true

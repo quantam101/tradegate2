@@ -1,0 +1,12 @@
+node_modules
+.next
+.env.local
+.vercel
+tsconfig.tsbuildinfo
+
+# GMAOS / EAOS
+__pycache__/
+data/
+*.sqlite3
+backups/
+.env

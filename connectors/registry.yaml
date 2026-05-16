@@ -1,0 +1,49 @@
+connectors:
+  local_files:
+    state: free_core
+    enabled: true
+    permissions: [read_workspace, write_drafts]
+  github_read:
+    state: free_external
+    enabled: false
+    permissions: [read_repo]
+  github_write:
+    state: forbidden_without_approval
+    enabled: false
+    permissions: [create_branch, open_pr]
+  n8n_local:
+    state: free_core
+    enabled: true
+    permissions: [run_local_workflow]
+  playwright_local:
+    state: free_core
+    enabled: true
+    permissions: [browser_research]
+  ollama_local:
+    state: free_core
+    enabled: false
+    permissions: [local_inference]
+  openai_api:
+    state: optional_paid_disabled
+    enabled: false
+    permissions: []
+  anthropic_api:
+    state: optional_paid_disabled
+    enabled: false
+    permissions: []
+  perplexity_api:
+    state: optional_paid_disabled
+    enabled: false
+    permissions: []
+  devin:
+    state: optional_paid_disabled
+    enabled: false
+    permissions: []
+  manus:
+    state: optional_paid_disabled
+    enabled: false
+    permissions: []
+  stripe:
+    state: forbidden_without_approval
+    enabled: false
+    permissions: []
