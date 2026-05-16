@@ -26,7 +26,7 @@ The system is not live-ready until all pass:
 
 ## Domain / DNS
 
-- [ ] `alreadyherellc.com` DNS points to OCI public IP.
+- [ ] `SITE_DOMAIN` set in `.env` and DNS points to OCI public IP.
 - [ ] `www`, `app`, `api`, and `status` records exist.
 - [ ] Caddy is running and HTTPS certificates are issued.
 - [ ] `n8n` is not public unless authentication/access control is active.

@@ -2,7 +2,7 @@
   email {$ACME_EMAIL}
 }
 
-alreadyherellc.com, www.alreadyherellc.com {
+{$SITE_DOMAIN}, www.{$SITE_DOMAIN} {
   encode gzip zstd
   reverse_proxy web:3000
 
@@ -15,7 +15,7 @@ alreadyherellc.com, www.alreadyherellc.com {
   }
 }
 
-app.alreadyherellc.com {
+app.{$SITE_DOMAIN} {
   encode gzip zstd
   reverse_proxy web:3000
 
@@ -28,7 +28,7 @@ app.alreadyherellc.com {
   }
 }
 
-api.alreadyherellc.com {
+api.{$SITE_DOMAIN} {
   encode gzip zstd
   reverse_proxy runtime:8080
 
@@ -40,14 +40,14 @@ api.alreadyherellc.com {
   }
 }
 
-status.alreadyherellc.com {
+status.{$SITE_DOMAIN} {
   encode gzip zstd
   reverse_proxy uptime-kuma:3001
 }
 
 # Keep n8n private until authentication and access controls are enabled.
 # To expose later, uncomment only after setting N8N_BASIC_AUTH_ACTIVE=true or using Cloudflare Access.
-# n8n.alreadyherellc.com {
+# n8n.{$SITE_DOMAIN} {
 #   encode gzip zstd
 #   reverse_proxy n8n:5678
 # }

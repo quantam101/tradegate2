@@ -62,9 +62,9 @@ services:
     environment:
       N8N_DIAGNOSTICS_ENABLED: "false"
       N8N_HIRING_BANNER_ENABLED: "false"
-      N8N_HOST: ${N8N_HOST:-n8n.alreadyherellc.com}
+      N8N_HOST: ${N8N_HOST:-n8n.${SITE_DOMAIN}}
       N8N_PROTOCOL: ${N8N_PROTOCOL:-https}
-      WEBHOOK_URL: ${N8N_PUBLIC_URL:-https://n8n.alreadyherellc.com}
+      WEBHOOK_URL: ${N8N_PUBLIC_URL:-https://n8n.${SITE_DOMAIN}}
       N8N_BASIC_AUTH_ACTIVE: ${N8N_BASIC_AUTH_ACTIVE:-true}
       N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER:-admin}
       N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD:-change-me-server-side}
