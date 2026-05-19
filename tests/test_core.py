@@ -1,4 +1,8 @@
 import os
+from pathlib import Path
+
+import yaml
+
 from runtime.sovereign_core import SovereignAutomationCore
 
 
@@ -21,3 +25,11 @@ def test_complex_work_requires_approval(tmp_path, monkeypatch):
     core = SovereignAutomationCore()
     result = core.execute("system", "context", "Deploy production and send client email", [0.2, 0.2, 0.2, 0.2])
     assert result.status == "approval_required"
+
+
+def test_scaffold_modules_are_not_enabled():
+    for path in Path("modules").glob("*/module.yaml"):
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))["module"]
+        if data["state"] == "scaffold" or data["state"].endswith("_scaffold"):
+            assert data["enabled"] is False
+            assert data.get("healthcheck") is None

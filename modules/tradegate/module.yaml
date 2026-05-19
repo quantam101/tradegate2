@@ -2,11 +2,12 @@ module:
   id: tradegate
   name: tradegate
   version: 0.1.0
-  state: scaffold
+  state: disabled_stale_scaffold
   cost_mode: zero_spend
-  enabled: true
+  enabled: false
+  disabled_reason: "Placeholder module is not production Trade Gate source. Keep disabled until replaced by verified backend/UI deployment."
   requires_approval_for:
     - external_write
     - paid_call
     - production_change
-  healthcheck: /api/health/tradegate
+  healthcheck: null

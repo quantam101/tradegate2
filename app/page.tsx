@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 const cards = [
   ['Agents', '/command-center/agents', 'Inspect the active declarative agent registry.'],
-  ['Modules', '/command-center/modules', 'View EAOS, ProfitEngine, TradeGate, Business OS, and lifecycle modules.'],
+  ['Modules', '/command-center/modules', 'View enabled modules and disabled placeholders awaiting verified source.'],
   ['Workflows', '/command-center/workflows', 'Launch safe local workflows and queue risky work.'],
   ['Approvals', '/command-center/approvals', 'Review pending approvals before any risky action.'],
   ['Costs', '/command-center/costs', 'Confirm strict zero-spend mode and paid adapter lockout.'],
