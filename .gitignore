@@ -10,3 +10,9 @@ data/
 *.sqlite3
 backups/
 .env
+
+# ── ASI Engine ────────────────────────────────────────────────────────────────
+patches/
+canary_*.py
+bare_metal_fabric.bin
+enterprise_workload.py
