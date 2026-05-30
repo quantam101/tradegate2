@@ -79,6 +79,31 @@ services:
     volumes:
       - uptime_data:/app/data
 
+  # ── ASI Engine (Asynchronous Stochastic Integration) ─────────────────────────
+  asi-engine:
+    image: python:3.11-slim
+    container_name: asi_engine
+    restart: unless-stopped
+    working_dir: /app
+    command: sh -c "pip install google-genai && python agents/asi_engine.py"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - CLUSTER_SECRET=${CLUSTER_SECRET}
+      - REDIS_ENDPOINT=redis://asi-cache:6379
+      - ASI_AUTO_DEPLOY=${ASI_AUTO_DEPLOY:-false}
+    volumes:
+      - .:/app
+    depends_on:
+      - asi-cache
+
+  asi-cache:
+    image: redis:7-alpine
+    container_name: asi_cache
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+    volumes:
+      - asi_redis_data:/data
+
 volumes:
   caddy_data:
   caddy_config:
