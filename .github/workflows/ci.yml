@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ── 1. Frontend: lint + typecheck + build ────────────────────────────────────
+  frontend:
+    name: 1 · Frontend (lint / typecheck / build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build (stub env vars)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SITE_URL: https://placeholder.local
+          NEXT_PUBLIC_COMMAND_CENTER_URL: https://app.placeholder.local
+
+  # ── 2. Runtime: Python tests ─────────────────────────────────────────────────
+  runtime-tests:
+    name: 2 · Runtime tests (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run runtime tests
+        run: pytest tests/ -v
+        env:
+          PYTHONPATH: .
+
+  # ── 3. Security scan ─────────────────────────────────────────────────────────
+  security:
+    name: 3 · Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check no real secrets in repo
+        run: |
+          # Fail if placeholder patterns that should be replaced are present
+          if grep -rn 'POSTGRES_PASSWORD=change-me-server-side\|N8N_BASIC_AUTH_PASSWORD=change-me-server-side' \
+             --include="*.env" --include="*.yml" --include="*.yaml" \
+             --exclude-dir=.git --exclude="*.example" --exclude="*.md" .; then
+            echo "ERROR: Unfilled placeholder credentials found in committed files"
+            exit 1
+          fi
+
+      - name: Security scanner (no secret markers)
+        run: npm run security:scan
+        env:
+          PYTHONPATH: .
+
+      - name: pip-audit — dependency vulnerability check
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt || true
