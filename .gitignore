@@ -16,3 +16,10 @@ patches/
 canary_*.py
 bare_metal_fabric.bin
 enterprise_workload.py
+# ---- Video Engine artifacts --
+video_input/
+video_output/
+*.mp4
+*.avi
+*.mkv
+*.mov
