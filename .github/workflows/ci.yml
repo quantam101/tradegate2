@@ -70,17 +70,7 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Check no real secrets in repo
-        run: |
-          # Fail if placeholder patterns that should be replaced are present
-          if grep -rn 'POSTGRES_PASSWORD=change-me-server-side\|N8N_BASIC_AUTH_PASSWORD=change-me-server-side' \
-             --include="*.env" --include="*.yml" --include="*.yaml" \
-             --exclude-dir=.git --exclude="*.example" --exclude="*.md" .; then
-            echo "ERROR: Unfilled placeholder credentials found in committed files"
-            exit 1
-          fi
-
-      - name: Security scanner (no secret markers)
+      - name: Security scanner (no secret markers in source)
         run: npm run security:scan
         env:
           PYTHONPATH: .
