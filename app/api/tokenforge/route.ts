@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const TF_API = 'https://api.tokenforge.io/api/proxy/chat';
-const TF_STATUS = 'https://api.tokenforge.io/api/status';
+const TF_BASE = (process.env.TOKENFORGE_API_URL || 'https://api.alreadyherellc.com').replace(/\/$/, '');
+const TF_API = `${TF_BASE}/proxy/chat`;
+const TF_STATUS = `${TF_BASE}/health`;
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.TOKENFORGE_API_KEY;
