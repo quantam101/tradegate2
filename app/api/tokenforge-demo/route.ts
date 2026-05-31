@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
-const TF_API = 'https://api.tokenforge.io/api/proxy/chat';
+const TF_BASE = (process.env.TOKENFORGE_API_URL || 'https://api.alreadyherellc.com').replace(/\/$/, '');
+const TF_API = `${TF_BASE}/proxy/chat`;
 
 export const revalidate = 3600;
 
