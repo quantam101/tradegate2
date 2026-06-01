@@ -16,9 +16,11 @@
     "next": "15.5.18",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "next-auth": "^4.24.14"
+    "next-auth": "^4.24.14",
+    "js-yaml": "^4.1.0"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "22.10.10",
     "@types/react": "19.0.8",
     "@types/react-dom": "19.0.3",
