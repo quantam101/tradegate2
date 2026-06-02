@@ -108,7 +108,7 @@ class DeclarativeExecutionPlan:
 class SecurityEnforcer:
     """Static analysis guardrail applied to generated code before execution."""
 
-    PROHIBITED_SIGNATURES = [
+    PROHIBITED_SIGNATURES = (
         r"\bimport\s+os\b",
         r"\bimport\s+sys\b",
         r"\bfrom\s+os\b",
@@ -123,7 +123,7 @@ class SecurityEnforcer:
         r"\bgetattr\s*\(",
         r"\bsetattr\s*\(",
         r"\bopen\s*\(",
-    ]
+    )
 
     _FENCE_RE = re.compile(r"```(?:python)?\s*|\s*```")
 
@@ -390,14 +390,14 @@ class AutonomousSwarmOrchestrator:
             self.audit.blocked("swarm-orchestrator", "security_rejected", {"error": str(exc), "sub_query": sub_query[:200]})
             return {"status": "rejected", "error": str(exc), "rationale": plan.analytical_rationale}
 
-        telemetry, success = await DistributedExecutionMatrix.run_payload(
+        execution_output, success = await DistributedExecutionMatrix.run_payload(
             hardened_code, is_online=self.gateway.cloud_active
         )
 
         status = "success" if success else "failed"
         self.telemetry.info(span, "node_complete", {"status": status})
         self.audit.info("swarm-orchestrator", "node_complete", {"status": status, "sub_query": sub_query[:200]})
-        return {"status": status, "telemetry": telemetry, "rationale": plan.analytical_rationale}
+        return {"status": status, "output": execution_output, "rationale": plan.analytical_rationale}
 
     async def execute_parallel_swarm(
         self, batch_queries: List[str], schema_ctx: str

@@ -151,7 +151,7 @@ def test_parallel_swarm_local_fallback_succeeds():
     )
     assert len(results) == 2
     assert all(r["status"] == "success" for r in results)
-    assert all("Local deterministic verification" in r["telemetry"] for r in results)
+    assert all("Local deterministic verification" in r["output"] for r in results)
 
 
 def test_swarm_rejects_unsafe_generated_plan(monkeypatch):
