@@ -14,8 +14,6 @@ blocked_actions:
   - openai_api_call
   - anthropic_api_call
   - perplexity_api_call
-  - devin_task
-  - manus_task
   - opusclip_paid_processing
   - zapier_paid_task
   - stripe_mutation
