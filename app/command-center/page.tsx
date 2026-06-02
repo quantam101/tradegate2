@@ -12,6 +12,7 @@ interface Agent {
   allowed_connectors: string[];
   forbidden_actions: string[];
   approval_required_actions: string[];
+  verifier_required?: boolean;
 }
 
 interface RegistryData {
@@ -54,7 +55,7 @@ function AgentCard({ agent, idx }: { agent: Agent; idx: number }) {
         ))}
       </div>
       <div style={{ fontSize: 10, color: '#22c55e', marginTop: 4 }}>
-        max_cost: ${agent.max_cost_usd} · verifier: {(agent as Record<string, unknown>).verifier_required ? 'required' : 'optional'}
+        max_cost: ${agent.max_cost_usd} · verifier: {agent.verifier_required ? 'required' : 'optional'}
       </div>
     </div>
   );
