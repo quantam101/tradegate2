@@ -3,4 +3,8 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY runtime ./runtime
-CMD ["python", "-m", "runtime.sovereign_core"]
+COPY agents ./agents
+COPY connectors ./connectors
+COPY eaos.config.yaml ./
+EXPOSE 8080
+CMD ["python", "-m", "runtime.api_server"]

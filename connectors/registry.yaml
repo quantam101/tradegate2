@@ -36,6 +36,29 @@ connectors:
     enabled: false
     permissions: []
   stripe:
-    state: forbidden_without_approval
-    enabled: false
-    permissions: []
+    state: payment_integration
+    enabled: true
+    permissions: [receive_webhook, log_payment_events]
+    webhook_url: https://app.alreadyherellc.com/api/stripe/webhook
+    status_url: /api/stripe/status
+    notes: >
+      Webhook must point to production URL. STRIPE_SECRET_KEY and
+      STRIPE_WEBHOOK_SECRET must be set in Vercel env vars.
+  workmarket_adp:
+    state: payment_integration
+    enabled: true
+    permissions: [read_account_status, read_payment_status]
+    status_url: /api/workmarket/status
+    notes: >
+      WorkMarket (ADP) has no public mutation API. WORKMARKET_API_TOKEN and
+      WORKMARKET_COMPANY_ID must be set in server env vars.
+
+  workmarket_adp:
+    state: payment_integration
+    enabled: true
+    permissions: [read_account_status, read_payment_status]
+    status_url: /api/workmarket/status
+    notes: >
+      WorkMarket (ADP) has no public mutation API — all writes go through
+      workmarket.com directly. WORKMARKET_API_TOKEN and WORKMARKET_COMPANY_ID
+      must be set in server env vars.
