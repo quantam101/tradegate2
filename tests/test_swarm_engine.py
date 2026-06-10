@@ -122,7 +122,8 @@ def test_numeric_range_bounds_are_interpolated():
 def test_gateway_is_local_first_in_zero_spend():
     gateway = FailoverInferenceGateway(CostGuard())
     assert gateway.cloud_active is False
-    raw = asyncio.run(gateway.generate_inference("p", "fallback prompt"))
+    raw, source = asyncio.run(gateway.generate_inference("p", "fallback prompt"))
+    assert source == "local"
     plan = DeclarativeExecutionPlan.from_dict(__import__("json").loads(raw))
     assert "fallback prompt" in plan.pure_python_script
 
@@ -151,21 +152,129 @@ def test_parallel_swarm_local_fallback_succeeds():
     )
     assert len(results) == 2
     assert all(r["status"] == "success" for r in results)
-    assert all("Local deterministic verification" in r["output"] for r in results)
+    assert all("Local deterministic verification" in r["telemetry"] for r in results)
 
 
 def test_swarm_rejects_unsafe_generated_plan(monkeypatch):
     orchestrator = AutonomousSwarmOrchestrator(session_id="test")
 
     async def _malicious(prompt, fallback_prompt):
-        return __import__("json").dumps(
-            {
-                "analytical_rationale": "bad",
-                "pure_python_script": "import os\nos.listdir('/')",
-                "data_quality_assertions": [],
-            }
+        return (
+            __import__("json").dumps(
+                {
+                    "analytical_rationale": "bad",
+                    "pure_python_script": "import os\nos.listdir('/')",
+                    "data_quality_assertions": [],
+                }
+            ),
+            "cloud",
         )
 
     monkeypatch.setattr(orchestrator.gateway, "generate_inference", _malicious)
     result = asyncio.run(orchestrator.orchestrate_node_task("q", "ctx"))
     assert result["status"] == "rejected"
+
+
+def test_parse_plan_strips_markdown_code_fences():
+    orchestrator = AutonomousSwarmOrchestrator(session_id="test")
+    fenced = (
+        "```json\n"
+        '{"analytical_rationale": "fenced", '
+        '"pure_python_script": "print(1)", '
+        '"data_quality_assertions": []}\n'
+        "```"
+    )
+    plan = orchestrator._parse_plan(fenced)
+    assert plan.analytical_rationale == "fenced"
+    assert plan.pure_python_script == "print(1)"
+
+
+def test_parse_plan_handles_non_dict_json_gracefully():
+    orchestrator = AutonomousSwarmOrchestrator(session_id="test")
+    # Valid JSON that is not an object: json.loads succeeds but from_dict would
+    # raise AttributeError. Must fall back to the deterministic stub, not crash.
+    for payload in ("[1, 2, 3]", '"a bare string"', "null", "42", "true"):
+        plan = orchestrator._parse_plan(payload)
+        assert plan.analytical_rationale == "Fallback structural extraction"
+
+
+def test_local_fallback_query_with_prohibited_keyword_not_rejected():
+    # A benign analytical query that merely *mentions* a prohibited word must not
+    # be rejected: the local deterministic plan embeds it only as a repr-escaped
+    # string literal and is trusted, so the untrusted-code scanner is skipped.
+    orchestrator = AutonomousSwarmOrchestrator(session_id="test")
+    for query in (
+        "Analyze subprocess throughput metrics",
+        "Evaluate socket latency and eval the open positions",
+    ):
+        result = asyncio.run(orchestrator.orchestrate_node_task(query, "columns: x"))
+        assert result["status"] == "success", result
+        assert "Local deterministic verification" in result["telemetry"]
+
+
+def test_cloud_plan_with_prohibited_keyword_still_rejected(monkeypatch):
+    # Defense-in-depth: untrusted cloud output is still fully scanned.
+    orchestrator = AutonomousSwarmOrchestrator(session_id="test")
+
+    async def _cloud(prompt, fallback_prompt):
+        return (
+            __import__("json").dumps(
+                {
+                    "analytical_rationale": "bad",
+                    "pure_python_script": "import subprocess\nsubprocess.run('x')",
+                    "data_quality_assertions": [],
+                }
+            ),
+            "cloud",
+        )
+
+    monkeypatch.setattr(orchestrator.gateway, "generate_inference", _cloud)
+    result = asyncio.run(orchestrator.orchestrate_node_task("q", "ctx"))
+    assert result["status"] == "rejected"
+
+
+def test_concurrent_mixed_sources_keep_trust_isolated(monkeypatch):
+    # Regression for the race condition: a single gateway is shared across all
+    # parallel workers. A trusted local task (whose query mentions a prohibited
+    # word) and an untrusted cloud task with a prohibited signature run together;
+    # the local task must NOT be scanned/rejected and the cloud task MUST be.
+    import json as _json
+
+    orchestrator = AutonomousSwarmOrchestrator(session_id="test")
+
+    async def _mixed(prompt, fallback_prompt):
+        if "subprocess" in fallback_prompt:
+            await asyncio.sleep(0.02)  # yield so a cloud task can interleave
+            script = (
+                f"objective = {fallback_prompt!r}\n"
+                "print('Local deterministic verification:', objective[:200])\n"
+            )
+            return (
+                _json.dumps(
+                    {
+                        "analytical_rationale": "local-task",
+                        "pure_python_script": script,
+                        "data_quality_assertions": [],
+                    }
+                ),
+                "local",
+            )
+        return (
+            _json.dumps(
+                {
+                    "analytical_rationale": "cloud-task",
+                    "pure_python_script": "import socket\nsocket.socket()",
+                    "data_quality_assertions": [],
+                }
+            ),
+            "cloud",
+        )
+
+    monkeypatch.setattr(orchestrator.gateway, "generate_inference", _mixed)
+    results = orchestrator.run_swarm(
+        ["Analyze subprocess throughput metrics", "do the cloud aggregation"],
+        schema_ctx="columns: x",
+    )
+    by = {r["rationale"]: r for r in results}
+    assert by["local-task"]["status"] == "success", by["local-task"]
+    assert by["cloud-task"]["status"] == "rejected", by["cloud-task"]
