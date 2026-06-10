@@ -413,8 +413,12 @@ class AutonomousSwarmOrchestrator:
             self.audit.blocked("swarm-orchestrator", "security_rejected", {"error": str(exc), "sub_query": sub_query[:200]})
             return {"status": "rejected", "error": str(exc), "rationale": plan.analytical_rationale}
 
+        # Route execution off this call's own inference source rather than the
+        # gateway's shared, mutable cloud_active flag (which a sibling worker can
+        # flip across an await): a cloud-inferred plan runs in the cloud sandbox,
+        # a local-inferred plan in the isolated local subprocess.
         telemetry, success = await DistributedExecutionMatrix.run_payload(
-            hardened_code, is_online=self.gateway.cloud_active
+            hardened_code, is_online=(source == "cloud")
         )
 
         status = "success" if success else "failed"
