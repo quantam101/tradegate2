@@ -7,9 +7,8 @@ on:
     branches: [main, master]
 
 jobs:
-  # ── 1. Frontend: lint + typecheck + build ────────────────────────────────────
   frontend:
-    name: 1 · Frontend (lint / typecheck / build)
+    name: Frontend lint typecheck build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,15 +28,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Build (stub env vars)
+      - name: Build
         run: npm run build
         env:
-          NEXT_PUBLIC_SITE_URL: https://placeholder.local
-          NEXT_PUBLIC_COMMAND_CENTER_URL: https://app.placeholder.local
+          NEXT_PUBLIC_SITE_URL: https://tradegate.alreadyherellc.com
+          NEXT_PUBLIC_COMMAND_CENTER_URL: https://tradegate.alreadyherellc.com/command-center
 
-  # ── 2. Runtime: Python tests ─────────────────────────────────────────────────
   runtime-tests:
-    name: 2 · Runtime tests (pytest)
+    name: Runtime tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,9 +53,8 @@ jobs:
         env:
           PYTHONPATH: .
 
-  # ── 3. Security scan ─────────────────────────────────────────────────────────
   security:
-    name: 3 · Security scan
+    name: Security scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -70,12 +67,12 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Security scanner (no secret markers in source)
+      - name: Security scanner
         run: npm run security:scan
         env:
           PYTHONPATH: .
 
-      - name: pip-audit — dependency vulnerability check
+      - name: pip-audit dependency vulnerability check
         run: |
           pip install pip-audit
-          pip-audit -r requirements.txt || true
+          pip-audit -r requirements.txt
