@@ -12,6 +12,7 @@ from runtime.brokerage_redaction import (
     redact_nested_payload,
 )
 from runtime.security_scanner import scan_repo, scan_text
+from runtime.verifier import Verifier
 
 
 def test_repository_scanner_rejects_brokerage_credentials_and_account_ids() -> None:
@@ -105,3 +106,9 @@ def test_rejects_unsafe_persisted_record() -> None:
                 "account_id": "123456789",
             }
         )
+
+
+def test_verifier_blocks_brokerage_identifier_output() -> None:
+    result = Verifier().verify_text_output("account_number=123456789")
+    assert not result.passed
+    assert result.reason.startswith("possible_secret_leak")
