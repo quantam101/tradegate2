@@ -4,9 +4,6 @@ import re
 from pathlib import Path
 from typing import List
 
-# Patterns that use simple substring matching (case-insensitive). These are
-# intentionally broad because this scanner is a repository guardrail, not a UI
-# redactor. False positives are cheaper than committed brokerage secrets.
 _SUBSTRING_MARKERS = [
     "API_KEY=",
     "BEGIN PRIVATE KEY",
@@ -22,7 +19,6 @@ _SUBSTRING_MARKERS = [
     "ACCOUNT_NUMBER=",
 ]
 
-# Patterns that need word-boundary matching to avoid false positives.
 _REGEX_MARKERS = [
     re.compile(r"(?<![a-z])sk-", re.IGNORECASE),
     re.compile(r"\b(?:rh|robinhood)[_-]?(?:access|refresh)?[_-]?token\b\s*[:=]", re.IGNORECASE),
@@ -30,8 +26,6 @@ _REGEX_MARKERS = [
     re.compile(r"\baccount[_-]?(?:id|number)\b\s*[:=]\s*[0-9]{6,}", re.IGNORECASE),
 ]
 
-# File types that must never be committed because they commonly contain raw
-# brokerage account identifiers, balances, positions, or statement exports.
 _BLOCKED_FILE_SUFFIXES = {
     ".png",
     ".jpg",
@@ -57,7 +51,7 @@ _BLOCKED_NAME_MARKERS = (
     "robinhood_export",
 )
 
-_ALLOWED_BLOCKED_SUFFIX_DIRS = {"docs", "fixtures", "tests"}
+_ALLOWED_EXAMPLE_DIRS = {"docs", "fixtures", "tests"}
 
 
 def scan_text(text: str) -> List[str]:
@@ -65,6 +59,10 @@ def scan_text(text: str) -> List[str]:
     found = [m for m in _SUBSTRING_MARKERS if m.lower() in lowered]
     found += [m.pattern for m in _REGEX_MARKERS if m.search(text)]
     return found
+
+
+def _is_allowed_example_path(path: Path) -> bool:
+    return any(part in _ALLOWED_EXAMPLE_DIRS for part in path.parts)
 
 
 def _scan_file_name(path: Path) -> List[str]:
@@ -88,8 +86,11 @@ def scan_repo(root: str = ".") -> List[str]:
             continue
 
         name_markers = _scan_file_name(path)
-        if name_markers and not any(part in _ALLOWED_BLOCKED_SUFFIX_DIRS for part in path.parts):
+        if name_markers and not _is_allowed_example_path(path):
             findings.append(f"{path}:{','.join(name_markers)}")
+
+        if _is_allowed_example_path(path):
+            continue
 
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
