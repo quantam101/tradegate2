@@ -10,7 +10,18 @@ class VerificationResult:
 
 
 class Verifier:
-    BLOCKED_MARKERS = ["API_KEY=", "BEGIN PRIVATE KEY", "sk-", "password:", "token:"]
+    BLOCKED_MARKERS = [
+        "API_KEY=",
+        "BEGIN PRIVATE KEY",
+        "sk-",
+        "password:",
+        "token:",
+        "account_id=",
+        "account_number=",
+        "brokerage_account_id",
+        "robinhood_access_token",
+        "robinhood_refresh_token",
+    ]
 
     def verify_text_output(self, output: str) -> VerificationResult:
         if not output or not output.strip():
