@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, Mapping
 
 _SECRET_VALUE_PATTERNS = (
     re.compile(r"rh_[A-Za-z0-9_\-]{12,}", re.IGNORECASE),
-    re.compile(r"(?:access|refresh|brokerage|robinhood)[_-]?credential\s*[:=]\s*[^\s,;}]+", re.IGNORECASE),
+    re.compile(r"(?:access|refresh|brokerage|robinhood)[_-]?(?:credential|token)\s*[:=]\s*[^\s,;}]+", re.IGNORECASE),
     re.compile(r"\b(?:acct|account)[_-]?(?:id|number)?\s*[:=]\s*[0-9A-Za-z\-]{6,}", re.IGNORECASE),
 )
 
