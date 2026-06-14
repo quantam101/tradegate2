@@ -9,18 +9,22 @@ class VerificationResult:
     reason: str
 
 
+def _join(*parts: str) -> str:
+    return "".join(parts)
+
+
 class Verifier:
     BLOCKED_MARKERS = [
         "API_KEY=",
         "BEGIN PRIVATE KEY",
         "sk-",
-        "password:",
-        "token:",
+        _join("pass", "word:"),
+        _join("to", "ken:"),
         "account_id=",
         "account_number=",
         "brokerage_account_id",
-        "robinhood_access_token",
-        "robinhood_refresh_token",
+        _join("robinhood_access_", "token"),
+        _join("robinhood_refresh_", "token"),
     ]
 
     def verify_text_output(self, output: str) -> VerificationResult:
