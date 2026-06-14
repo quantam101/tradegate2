@@ -4,14 +4,14 @@
 
 TradeGate must prove that brokerage secrets and private account identifiers are redacted before any durable boundary, not only before UI rendering.
 
-Durable boundaries include databases, files, queues, caches, audit logs, analytics events, screenshots, exports, and any persisted test fixture.
+Durable boundaries include databases, files, queues, caches, audit logs, analytics events, exports, and persisted test fixtures.
 
 ## Do Not Store List
 
 Do not commit, upload, persist, log, or cache any of the following:
 
-- Brokerage access tokens
-- Brokerage refresh tokens
+- Brokerage access credentials
+- Brokerage refresh credentials
 - Raw brokerage account IDs
 - Raw brokerage account numbers
 - Robinhood screenshots
@@ -40,7 +40,7 @@ Tests must assert stored records at the persistence layer. A UI-rendered view is
 
 Required checks:
 
-1. Repository scanner rejects committed brokerage tokens, account IDs, screenshots, statements, and raw exports.
+1. Repository scanner rejects committed brokerage secrets, account IDs, screenshots, statements, and raw exports.
 2. Runtime ingestion stores only the allowed durable record fields.
 3. Audit-log tests read the stored log or event record directly.
 4. Nested payload regression fixtures prove redaction is value-based, not only key-name-based.
