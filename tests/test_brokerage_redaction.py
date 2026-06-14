@@ -14,7 +14,7 @@ from runtime.brokerage_redaction import (
 from runtime.security_scanner import scan_repo, scan_text
 
 
-def test_repository_scanner_rejects_brokerage_tokens_and_account_ids() -> None:
+def test_repository_scanner_rejects_brokerage_credentials_and_account_ids() -> None:
     findings = scan_text("robinhood_access_token=rh_live_secret_value_123456 account_id=123456789")
     assert findings
 
@@ -33,7 +33,7 @@ def test_runtime_ingestion_persists_only_safe_boundary_record() -> None:
         "event_id": "evt_456",
         "account_id": "123456789",
         "positions": [{"symbol": "ABC", "quantity": 1}],
-        "access_token": "rh_live_secret_value_123456789",
+        "access_credential": "rh_live_secret_value_123456789",
     }
 
     record = persist_redacted_event(raw_event, durable_sink, secret_key="unit-test-key")
@@ -72,7 +72,7 @@ def test_nested_payload_secret_redaction_is_not_key_name_only() -> None:
         "outer": {
             "innocent_name": {
                 "value": raw_secret,
-                "deep": ["safe", {"not_token": "account_number=123456789"}],
+                "deep": ["safe", {"not_secret_named": "account_number=123456789"}],
             }
         }
     }
