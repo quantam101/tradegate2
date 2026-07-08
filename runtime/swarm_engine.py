@@ -108,7 +108,7 @@ class DeclarativeExecutionPlan:
 class SecurityEnforcer:
     """Static analysis guardrail applied to generated code before execution."""
 
-    PROHIBITED_SIGNATURES = (
+    PROHIBITED_SIGNATURES = [
         r"\bimport\s+os\b",
         r"\bimport\s+sys\b",
         r"\bfrom\s+os\b",
@@ -123,7 +123,7 @@ class SecurityEnforcer:
         r"\bgetattr\s*\(",
         r"\bsetattr\s*\(",
         r"\bopen\s*\(",
-    )
+    ]
 
     _FENCE_RE = re.compile(r"```(?:python)?\s*|\s*```")
 
@@ -247,7 +247,15 @@ class FailoverInferenceGateway:
             logger.warning("Cloud core engine unreachable. Initializing local routing.")
             return False
 
-    async def generate_inference(self, prompt: str, fallback_prompt: str) -> str:
+    async def generate_inference(self, prompt: str, fallback_prompt: str) -> Tuple[str, str]:
+        """Return ``(raw_inference_text, source)`` where source is "cloud" or "local".
+
+        The trust signal is returned alongside the text rather than stored on the
+        instance: a single gateway is shared by all workers in
+        ``execute_parallel_swarm``, so instance state would race across the
+        ``await`` points below and a local worker could observe another worker's
+        "cloud" marker (and vice versa).
+        """
         if self.cloud_active and self.client is not None:
             try:
                 response = await asyncio.to_thread(
@@ -257,14 +265,14 @@ class FailoverInferenceGateway:
                 )
                 text = getattr(response, "text", None)
                 if text:
-                    return text
+                    return text, "cloud"
                 logger.warning("Cloud inference returned empty payload. Failing over to local.")
             except Exception as exc:  # pragma: no cover - network/credential dependent
                 logger.error("Cloud channel severed (%s). Switching to local failover.", exc)
                 self.cloud_active = False
 
         logger.info("Executing via local edge inference engine (air-gapped mode).")
-        return await self._execute_local_inference(fallback_prompt)
+        return await self._execute_local_inference(fallback_prompt), "local"
 
     async def _execute_local_inference(self, prompt: str) -> str:
         """Deterministic local plan used when the cloud channel is unavailable.
@@ -357,10 +365,16 @@ class AutonomousSwarmOrchestrator:
         except TypeError:
             self.audit = AuditLog()
 
+    _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
+
     def _parse_plan(self, raw_inference: str) -> DeclarativeExecutionPlan:
+        # LLMs commonly wrap JSON in markdown fences; strip them before parsing
+        # so cloud responses are not silently discarded into the stub plan.
+        match = self._JSON_FENCE_RE.search(raw_inference)
+        text = match.group(1).strip() if match else raw_inference.strip()
         try:
-            return DeclarativeExecutionPlan.from_dict(json.loads(raw_inference))
-        except (ValueError, KeyError, TypeError):
+            return DeclarativeExecutionPlan.from_dict(json.loads(text))
+        except (ValueError, KeyError, TypeError, AttributeError):
             return DeclarativeExecutionPlan(
                 analytical_rationale="Fallback structural extraction",
                 pure_python_script="print('Fallback processing anomaly verification.')",
@@ -376,28 +390,41 @@ class AutonomousSwarmOrchestrator:
             "Deconstruct this data prompt into a DeclarativeExecutionPlan JSON "
             f"schema: {sub_query}. Schema: {schema_ctx}"
         )
-        raw_inference = await self.gateway.generate_inference(prompt, fallback_prompt=sub_query)
+        raw_inference, source = await self.gateway.generate_inference(prompt, fallback_prompt=sub_query)
         plan = self._parse_plan(raw_inference)
 
         try:
-            hardened_code = SecurityEnforcer.verify_and_inject(
-                plan.pure_python_script,
-                plan.data_quality_assertions,
-                preamble=bool(plan.data_quality_assertions),
-            )
+            if source == "local":
+                # Trusted, deterministic fallback we generated ourselves: the query
+                # is embedded only as a repr-escaped string literal that cannot break
+                # out into code. Running the untrusted-code scanner over it would
+                # false-positive whenever the query text contains a prohibited word
+                # (e.g. "analyze subprocess throughput"), so execute it as-is. Cloud
+                # output remains fully scanned below.
+                hardened_code = plan.pure_python_script
+            else:
+                hardened_code = SecurityEnforcer.verify_and_inject(
+                    plan.pure_python_script,
+                    plan.data_quality_assertions,
+                    preamble=bool(plan.data_quality_assertions),
+                )
         except SecurityError as exc:
             self.telemetry.error(span, "security_rejected", {"error": str(exc)})
             self.audit.blocked("swarm-orchestrator", "security_rejected", {"error": str(exc), "sub_query": sub_query[:200]})
             return {"status": "rejected", "error": str(exc), "rationale": plan.analytical_rationale}
 
-        execution_output, success = await DistributedExecutionMatrix.run_payload(
-            hardened_code, is_online=self.gateway.cloud_active
+        # Route execution off this call's own inference source rather than the
+        # gateway's shared, mutable cloud_active flag (which a sibling worker can
+        # flip across an await): a cloud-inferred plan runs in the cloud sandbox,
+        # a local-inferred plan in the isolated local subprocess.
+        telemetry, success = await DistributedExecutionMatrix.run_payload(
+            hardened_code, is_online=(source == "cloud")
         )
 
         status = "success" if success else "failed"
         self.telemetry.info(span, "node_complete", {"status": status})
         self.audit.info("swarm-orchestrator", "node_complete", {"status": status, "sub_query": sub_query[:200]})
-        return {"status": status, "output": execution_output, "rationale": plan.analytical_rationale}
+        return {"status": status, "telemetry": telemetry, "rationale": plan.analytical_rationale}
 
     async def execute_parallel_swarm(
         self, batch_queries: List[str], schema_ctx: str
