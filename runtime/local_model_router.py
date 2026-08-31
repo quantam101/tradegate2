@@ -16,7 +16,7 @@ class ModelRoute:
 class LocalModelRouter:
     def route(self, complexity_score: float) -> ModelRoute:
         local_enabled = os.getenv("GMAOS_LOCAL_MODEL_ENABLED", "false").lower() == "true"
-        local_endpoint = os.getenv("GMAOS_LOCAL_MODEL_ENDPOINT", "http://localhost:11434/v1/chat/completions")
+        local_endpoint = os.getenv("GMAOS_LOCAL_MODEL_ENDPOINT", "http://ollama:11434/v1/chat/completions")
 
         if complexity_score <= 0.35:
             return ModelRoute(RouteDecision("DETERMINISTIC_LOCAL", None, 0.0, "deterministic_execution"), "low_complexity")
