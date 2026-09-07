@@ -31,8 +31,8 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          NEXT_PUBLIC_SITE_URL: https://tradegate.alreadyherellc.com
-          NEXT_PUBLIC_COMMAND_CENTER_URL: https://tradegate.alreadyherellc.com/command-center
+          NEXT_PUBLIC_SITE_URL: https://tradegate2-one.vercel.app
+          NEXT_PUBLIC_COMMAND_CENTER_URL: https://tradegate2-one.vercel.app/command-center
 
   runtime-tests:
     name: Runtime tests
