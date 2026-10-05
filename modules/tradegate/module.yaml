@@ -1,13 +1,19 @@
 module:
   id: tradegate
   name: tradegate
-  version: 0.1.0
-  state: disabled_stale_scaffold
+  version: 0.2.0
+  state: paper_trading
   cost_mode: zero_spend
-  enabled: false
-  disabled_reason: "Placeholder module is not production Trade Gate source. Keep disabled until replaced by verified backend/UI deployment."
+  enabled: true
+  description: >
+    Stateful micro-agent mesh (9 async agents) for paper trading:
+    replay/synthetic feeds, PaperBroker with ATR trailing stops, fractional
+    Kelly sizing with a 4% drawdown circuit breaker, audit telemetry, and
+    walk-forward parameter optimization. Live exchange trading is not
+    implemented; Broker/MarketDataSource are the interfaces for it.
+  entrypoint: "python3 -m runtime.tradegate paper"
   requires_approval_for:
     - external_write
     - paid_call
     - production_change
-  healthcheck: null
+  healthcheck: "python3 -m runtime.tradegate backtest --steps 500"

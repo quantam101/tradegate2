@@ -1,0 +1,22 @@
+[Unit]
+Description=TradeGate ProfitEngine — paper-trading micro-agent mesh
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/tradegate2
+ExecStart=/usr/bin/python3 -m runtime.tradegate paper
+Restart=always
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=10
+
+# Security hardening (from v5.0 spec, kept)
+PrivateTmp=true
+ProtectSystem=full
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
