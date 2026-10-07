@@ -79,6 +79,7 @@ class PaperBroker:
     """
 
     def __init__(self, ledger_path: Path | None = None, fee_bps: float = 1.0):
+        self.last_px = {}
         self.positions: dict[str, Position] = {}
         self.resting: dict[str, Order] = {}
         self.fills: list[Fill] = []
@@ -94,6 +95,9 @@ class PaperBroker:
                 f.write(json.dumps(asdict(fill), default=str) + "\n")
 
     async def submit(self, order: Order, ref_price: float) -> Fill | None:
+        if self.breaker_tripped:
+            return None  # liquidation latched — no new entries post-breaker
+        self.last_px[order.symbol] = ref_price
         if order.symbol in self.positions:
             return None  # one position per symbol
         qty = order.capital / ref_price
@@ -115,6 +119,7 @@ class PaperBroker:
     async def on_tick(self, tick: Tick) -> list[Fill]:
         out: list[Fill] = []
         self._breaker_hit()  # seed/update the equity peak before any exits
+        self.last_px[tick.symbol] = tick.price
         pos = self.positions.get(tick.symbol)
         if not pos:
             return out
@@ -136,24 +141,36 @@ class PaperBroker:
             # RiskAgent to see another signal.
             if self._breaker_hit():
                 for p in list(self.positions.values()):
-                    out.append(self._exit(p, tick.price, tick.timestamp,
-                                          "EXIT_KILL"))
+                    out.append(self._exit(
+                        p, self.last_px.get(p.symbol, p.entry_price),
+                        tick.timestamp, "EXIT_KILL"))
         return out
 
     def _breaker_hit(self) -> bool:
-        """Owner-wired drawdown check on realized equity."""
-        if not self.equity_ref or not self.max_drawdown_limit:
+        """Owner-wired drawdown check on realized equity. Latches
+        ``breaker_tripped`` so no new entries slip in post-liquidation."""
+        limit = (self.drawdown_limit_ref() if self.drawdown_limit_ref
+                 else self.max_drawdown_limit)
+        if not self.equity_ref or not limit:
             return False
         eq = self.equity_ref()
         self._breaker_peak = max(self._breaker_peak or eq, eq)
-        return self._breaker_peak > 0 and \
-            1 - eq / self._breaker_peak >= self.max_drawdown_limit
+        if self._breaker_peak > 0 and \
+                1 - eq / self._breaker_peak >= limit:
+            self.breaker_tripped = True
+            return True
+        return False
 
-    # equity_ref / max_drawdown_limit / _breaker_peak are set by the owner
-    # (orchestrator / backtest / proc child) — None / 0 disables the check.
+    # equity_ref / drawdown_limit_ref / max_drawdown_limit / _breaker_peak
+    # are set by the owner (orchestrator / backtest / proc child). The ref
+    # form reads the limit live so ConfigStore.swap() stays authoritative;
+    # the static attr is a fallback. None / 0 disables the check.
     equity_ref = None
+    drawdown_limit_ref = None
     max_drawdown_limit = 0.0
+    breaker_tripped = False
     _breaker_peak = None
+    last_px: dict = {}
 
     def cancel_all(self) -> int:
         """Kill-switch: drop every resting (unfilled) order. Returns count."""

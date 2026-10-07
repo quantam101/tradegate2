@@ -123,7 +123,8 @@ def _f_exec(q, store, shared):
     from .broker import PaperBroker
     broker = PaperBroker(ledger_path=Path("data/tradegate/proc_fills.jsonl"))
     broker.equity_ref = lambda: shared["equity"].value
-    broker.max_drawdown_limit = store.snapshot().max_drawdown_limit
+    broker.drawdown_limit_ref = (
+        lambda: store.snapshot().max_drawdown_limit)
 
     def _probe(pnl: float) -> None:
         shared["equity"].value = INITIAL_EQUITY + pnl

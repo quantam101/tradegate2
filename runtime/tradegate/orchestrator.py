@@ -51,7 +51,8 @@ class TradeGateOrchestrator:
         # Realized-equity breaker: flatten fires the tick a loss breaches
         # the limit, even with no new signal in flight.
         self.broker.equity_ref = lambda: self.equity
-        self.broker.max_drawdown_limit = self.store.snapshot().max_drawdown_limit
+        self.broker.drawdown_limit_ref = (
+            lambda: self.store.snapshot().max_drawdown_limit)
         self.audit_path = Path(audit_path) if audit_path else None
 
         q_depth, q_regime_out = asyncio.Queue(), asyncio.Queue()

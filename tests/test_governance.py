@@ -214,10 +214,18 @@ def test_broker_breaker_flattens_on_loss_tick():
         return await broker.on_tick(t)
 
     fills = asyncio.run(go())
-    kinds = {f.symbol: f.kind for f in fills}
-    assert kinds.get("AAA") == "EXIT_STOP"
-    assert kinds.get("BBB") == "EXIT_KILL"
+    by_sym = {f.symbol: f for f in fills}
+    assert by_sym["AAA"].kind == "EXIT_STOP"
+    assert by_sym["BBB"].kind == "EXIT_KILL"
+    # BBB exits at ITS OWN last price (100), not AAA's tick price (40)
+    assert by_sym["BBB"].price == 100.0
     assert not broker.positions
+    # breaker latched — no new entries after liquidation
+    from runtime.tradegate.broker import Order
+    o = Order(symbol="CCC", side=Side.BUY, strategy=Strategy.ALPHA_MOMENTUM,
+              capital=100, stop_price=90, take_profit=110,
+              placed_ts=1.0, expires_ts=999.0)
+    assert asyncio.run(broker.submit(o, 100.0)) is None
 
 
 def test_exec_latency_degrade():
