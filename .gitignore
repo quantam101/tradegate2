@@ -7,6 +7,7 @@ tsconfig.tsbuildinfo
 # GMAOS / EAOS
 __pycache__/
 data/
+!/data/tradegate/
 *.sqlite3
 backups/
 .env

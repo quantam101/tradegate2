@@ -55,15 +55,26 @@ def main(argv=None):
 
     elif mode == "paper":
         import os
+
         from .orchestrator import run_paper
         steps = int(argv[argv.index("--steps") + 1]) if "--steps" in argv else 5000
-        kw = dict(steps=steps,
-                  audit_path=Path("data/tradegate/audit.jsonl"),
-                  ledger_path=Path("data/tradegate/fills.jsonl"),
-                  discord_url=os.environ.get("TRADEGATE_DISCORD_WEBHOOK"),
-                  telegram_token=os.environ.get("TRADEGATE_TELEGRAM_TOKEN"),
-                  telegram_chat=os.environ.get("TRADEGATE_TELEGRAM_CHAT"))
+        kw = {"steps": steps,
+              "audit_path": Path("data/tradegate/audit.jsonl"),
+              "ledger_path": Path("data/tradegate/fills.jsonl"),
+              "discord_url": os.environ.get("TRADEGATE_DISCORD_WEBHOOK"),
+              "telegram_token": os.environ.get("TRADEGATE_TELEGRAM_TOKEN"),
+              "telegram_chat": os.environ.get("TRADEGATE_TELEGRAM_CHAT")}
         asyncio.run(run_paper(**kw))
+
+    elif mode == "daily":
+        # Real-data paper run: daily OHLCV bars through the full mesh,
+        # reported against buy-and-hold. This is the pre-live gate.
+        from .daily import run_daily
+        syms = (argv[argv.index("--symbols") + 1].split(",")
+                if "--symbols" in argv else ["SPY", "QQQ", "AAPL", "MSFT", "NVDA"])
+        cap = (float(argv[argv.index("--capital") + 1])
+               if "--capital" in argv else 10000.0)
+        run_daily(syms, capital=cap)
 
     else:
         print(__doc__)
