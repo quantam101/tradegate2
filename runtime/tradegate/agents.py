@@ -15,7 +15,7 @@ import time
 from collections import deque
 
 from .broker import Order, PaperBroker
-from .config import ConfigStore
+from .config import ConfigStore, EngineConfig
 from .events import MarketEvent, Side, Signal, Strategy
 
 log = logging.getLogger("tradegate")
@@ -124,6 +124,28 @@ class RegimeAgent:
         self.store = store
         self.tr_window = deque(maxlen=64)
         self.returns = deque(maxlen=64)
+        self.prices = deque(maxlen=128)
+
+    def _momentum(self, cfg) -> float:
+        """N-bar price return — real trend input on OHLCV data."""
+        w = int(cfg.mom_window) + 1
+        if len(self.prices) < w:
+            return 0.0
+        base = list(self.prices)[-w]
+        return self.prices[-1] / base - 1.0 if base else 0.0
+
+    def _rsi(self, cfg) -> float:
+        """Simple Wilder-style RSI over the last rsi_window returns."""
+        win = int(cfg.rsi_window)
+        rets = list(self.returns)[-win:]
+        if len(rets) < win:
+            return 50.0
+        gains = sum(r for r in rets if r > 0)
+        losses = -sum(r for r in rets if r < 0)
+        if losses == 0:
+            return 100.0 if gains > 0 else 50.0
+        rs = gains / losses
+        return 100.0 - 100.0 / (1.0 + rs)
 
     def _atr(self, cfg) -> float:
         if len(self.tr_window) < 2:
@@ -147,17 +169,26 @@ class RegimeAgent:
                     self.tr_window.append(tr)
                     self.returns.append((t.price - last_price) / last_price)
                 last_price = t.price
+                self.prices.append(t.price)
                 evt.atr = self._atr(cfg)
+                evt.momentum = self._momentum(cfg)
+                evt.rsi = self._rsi(cfg)
 
                 vol = statistics.pstdev(self.returns) if len(self.returns) > 10 else 0.0
-                trend = abs(sum(self.returns)) if len(self.returns) > 10 else 0.0
 
                 if evt.imbalance >= cfg.min_imbalance and evt.cvd > cfg.cvd_min:
+                    # Real order-book data path (live feeds only)
                     evt.regime = "LIQUIDITY_SWEEP_BREAKOUT"
                     evt.votes.append({"agent": "regime", "side": Side.BUY.value,
                                       "confidence": min(1.0, evt.imbalance / (cfg.min_imbalance * 1.5))})
                     await self.q_alpha.put(evt)
-                elif 0.7 <= evt.imbalance < cfg.min_imbalance and vol > 0 and trend < vol * 8:
+                elif evt.momentum > cfg.trend_min:
+                    # Price-derived trend regime — works on any bar data
+                    evt.regime = "TREND_FOLLOW"
+                    evt.votes.append({"agent": "regime", "side": Side.BUY.value,
+                                      "confidence": min(1.0, evt.momentum / max(vol * cfg.mom_window ** 0.5, 1e-9))})
+                    await self.q_alpha.put(evt)
+                elif evt.momentum <= 0 and vol >= 0:
                     evt.regime = "MEAN_REVERSION_RANGE"
                     evt.votes.append({"agent": "regime", "side": Side.BUY.value,
                                       "confidence": 0.6})
@@ -173,10 +204,14 @@ class RegimeAgent:
 
 
 class AlphaStrategyAgent:
-    """Momentum entries on confirmed depth sweeps with positive CVD."""
+    """Momentum entries: depth sweeps on live feeds, price-trend on bars.
 
-    def __init__(self, q_in, q_out):
-        self.q_in, self.q_out = q_in, q_out
+    On bar data the entry is a real trend-follow rule: momentum positive
+    but RSI not overbought (don't chase the top of a stretched move).
+    """
+
+    def __init__(self, q_in, q_out, store: ConfigStore | None = None):
+        self.q_in, self.q_out, self.store = q_in, q_out, store
 
     async def run(self) -> None:
         while True:
@@ -185,21 +220,25 @@ class AlphaStrategyAgent:
                 if evt is None:
                     await self.q_out.put(None)
                     return
-                evt.signal = Signal(Side.BUY, Strategy.ALPHA_MOMENTUM,
-                                    f"imbalance={evt.imbalance:.2f} cvd={evt.cvd:.1f}")
-                evt.votes.append({"agent": "alpha", "side": Side.BUY.value,
-                                  "confidence": min(1.0, evt.imbalance / 3.0)})
+                cfg = self.store.snapshot() if self.store else EngineConfig()
+                buy = evt.momentum > 0 and evt.rsi < cfg.rsi_overbought
+                evt.signal = Signal(
+                    Side.BUY if buy else Side.HOLD, Strategy.ALPHA_MOMENTUM,
+                    f"mom={evt.momentum:+.3f} rsi={evt.rsi:.0f} imb={evt.imbalance:.2f}")
+                evt.votes.append({"agent": "alpha",
+                                  "side": Side.BUY.value if buy else Side.HOLD.value,
+                                  "confidence": min(1.0, abs(evt.momentum) * 10) if buy else 0.0})
                 await self.q_out.put(evt)
             finally:
                 self.q_in.task_done()
 
 
 class BetaStrategyAgent:
-    """Mean-reversion entries on range dips: buy after a down tick in a range."""
+    """Mean-reversion entries: buy only genuinely oversold ranges."""
 
-    def __init__(self, q_in, q_out):
-        self.q_in, self.q_out = q_in, q_out
-        self.prev_price: float | None = None
+    def __init__(self, q_in, q_out, store: ConfigStore | None = None):
+        self.q_in, self.q_out, self.store = q_in, q_out, store
+        self.prev_price: float | None = None  # kept for future dip-weighted sizing
 
     async def run(self) -> None:
         while True:
@@ -208,14 +247,16 @@ class BetaStrategyAgent:
                 if evt is None:
                     await self.q_out.put(None)
                     return
-                dip = self.prev_price is not None and evt.tick.price < self.prev_price
+                cfg = self.store.snapshot() if self.store else EngineConfig()
                 self.prev_price = evt.tick.price
+                buy = evt.rsi <= cfg.rsi_oversold
                 evt.signal = Signal(
-                    Side.BUY if dip else Side.HOLD, Strategy.BETA_REVERSION,
-                    "range dip" if dip else "range, no dip")
+                    Side.BUY if buy else Side.HOLD, Strategy.BETA_REVERSION,
+                    f"rsi={evt.rsi:.0f} oversold={cfg.rsi_oversold:.0f}"
+                    if buy else "range, not oversold")
                 evt.votes.append({"agent": "beta",
-                                  "side": Side.BUY.value if dip else Side.HOLD.value,
-                                  "confidence": 0.7 if dip else 0.0})
+                                  "side": Side.BUY.value if buy else Side.HOLD.value,
+                                  "confidence": 0.7 if buy else 0.0})
                 await self.q_out.put(evt)
             finally:
                 self.q_in.task_done()

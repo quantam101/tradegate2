@@ -66,6 +66,8 @@ class MarketEvent:
     cvd: float = 0.0
     imbalance: float = 1.0
     atr: float = 0.0
+    momentum: float = 0.0   # mom_window return computed by RegimeAgent
+    rsi: float = 50.0       # Wilder-style RSI over rsi_window
     regime: str = "UNKNOWN"
     signal: Signal = field(default_factory=lambda: Signal(Side.HOLD, Strategy.NONE))
     sized_capital: float = 0.0

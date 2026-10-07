@@ -13,9 +13,12 @@ from collections.abc import Callable
 
 # name -> (low, high, step)
 SEARCH_SPACE: dict[str, tuple[float, float, float]] = {
-    "min_imbalance": (1.6, 3.2, 0.1),
-    "atr_multiplier": (1.2, 2.6, 0.1),
-    "safety_factor": (0.15, 0.50, 0.05),
+    "atr_multiplier": (1.5, 4.0, 0.1),      # wider stops ride trends longer
+    "safety_factor": (0.15, 0.60, 0.05),
+    "mom_window": (10, 40, 5),              # trend lookback bars
+    "rsi_overbought": (60, 85, 5),          # alpha entry ceiling
+    "rsi_oversold": (25, 40, 5),            # beta entry floor
+    "max_trade_fraction": (0.04, 0.25, 0.01),
 }
 
 
