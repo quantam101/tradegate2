@@ -77,8 +77,8 @@ async def _run_pipeline(ticks: Iterable[Tick], config: EngineConfig,
 
     depth = DepthCvdAgent(q_depth, q_sig, store)
     regime = RegimeAgent(q_sig, q_alpha, q_beta, asyncio.Queue(), store)
-    alpha = AlphaStrategyAgent(q_alpha, q_risk)
-    beta = BetaStrategyAgent(q_beta, q_risk)
+    alpha = AlphaStrategyAgent(q_alpha, q_risk, store)
+    beta = BetaStrategyAgent(q_beta, q_risk, store)
     risk = RiskAgent(q_risk, q_exec, store, lambda: equity["v"])
     execution = ExecutionAgent(q_exec, asyncio.Queue(), broker, store)
 

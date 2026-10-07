@@ -5,10 +5,10 @@ import asyncio
 import pytest
 
 from runtime.tradegate.agents import RiskAgent
-from runtime.tradegate.backtest import compute_metrics, run_backtest, score
+from runtime.tradegate.backtest import run_backtest, score
 from runtime.tradegate.broker import Order, PaperBroker
 from runtime.tradegate.config import ConfigStore, EngineConfig
-from runtime.tradegate.events import Side, Strategy, Tick
+from runtime.tradegate.events import MarketEvent, Side, Strategy, Tick
 from runtime.tradegate.feed import SyntheticFeed
 
 
@@ -98,3 +98,92 @@ def test_score_penalizes_drawdown_breach():
               "max_drawdown": 0.10, "sharpe": 2.0, "profit_factor": 2.0,
               "avg_win": 20, "avg_loss": 10}
     assert score(breach, cfg) < -50
+
+
+def test_regime_stamps_real_momentum_and_rsi():
+    """Alpha inputs must come from price history, not placeholders."""
+    from runtime.tradegate.agents import RegimeAgent
+    from runtime.tradegate.events import MarketEvent
+
+    qs = [asyncio.Queue() for _ in range(4)]
+    agent = RegimeAgent(qs[0], qs[1], qs[2], qs[3], ConfigStore())
+
+    async def drive():
+        async def feed():
+            for i in range(50):
+                p = 100 + i * 0.5  # steady uptrend
+                yield Tick("X", float(i), p, p - 0.1, p + 0.1, 1.0, 1.0,
+                           0.0, high=p + 0.2, low=p - 0.2)
+        task = asyncio.create_task(agent.run())
+        async for t in feed():
+            evt = MarketEvent(tick=t)
+            await qs[0].put(evt)
+        await qs[0].put(None)
+        await task
+        outs = []
+        while not qs[1].empty():
+            outs.append(await qs[1].get())
+        return outs
+
+    routed = asyncio.run(drive())
+    assert routed, "trending prices must route to alpha queue"
+    last = routed[-2]  # last queue item is the sentinel None
+    assert last.momentum > 0, "uptrend must show positive momentum"
+    assert last.rsi > 70, "persistent gains must push RSI high"
+    assert last.regime == "TREND_FOLLOW"
+
+
+def test_beta_blocks_non_oversold():
+    """Beta must not fire just because price dipped — needs real RSI signal."""
+    from runtime.tradegate.agents import BetaStrategyAgent
+
+    q_in, q_out = asyncio.Queue(), asyncio.Queue()
+    agent = BetaStrategyAgent(q_in, q_out, ConfigStore())
+
+    async def drive():
+        task = asyncio.create_task(agent.run())
+        for i, (price, rsi) in enumerate([(100, 50.0), (101, 50.0), (95, 20.0)]):
+            evt = MarketEvent(tick=Tick("X", float(i), price, price, price,
+                                        1.0, 1.0, 0.0))
+            evt.rsi = rsi  # neutral, neutral, then oversold
+            await q_in.put(evt)
+        await q_in.put(None)
+        await task
+        outs = []
+        while not q_out.empty():
+            outs.append(await q_out.get())
+        return outs
+
+    outs = asyncio.run(drive())
+    sides = [o.signal.side for o in outs if o]
+    assert sides[:2] == [Side.HOLD, Side.HOLD] and sides[2] == Side.BUY
+
+
+def test_cvd_is_per_symbol_not_inherited():
+    """Symbol B must not inherit symbol A's cumulative volume delta."""
+    from runtime.tradegate.agents import DepthCvdAgent
+    from runtime.tradegate.events import MarketEvent
+
+    q_in, q_out = asyncio.Queue(), asyncio.Queue()
+    agent = DepthCvdAgent(q_in, q_out, ConfigStore())
+
+    async def drive():
+        task = asyncio.create_task(agent.run())
+        ticks = [
+            Tick("A", 0.0, 100, 99.9, 100.1, 1, 1, 50.0),
+            Tick("A", 1.0, 100, 99.9, 100.1, 1, 1, 50.0),
+            Tick("B", 2.0, 100, 99.9, 100.1, 1, 1, -10.0),
+        ]
+        for t in ticks:
+            await q_in.put(MarketEvent(tick=t))
+        await q_in.put(None)
+        await task
+        outs = []
+        while not q_out.empty():
+            outs.append(await q_out.get())
+        return outs
+
+    outs = asyncio.run(drive())
+    a_evt, b_evt = outs[1], outs[2]
+    assert a_evt.cvd == 100.0
+    assert b_evt.cvd == -10.0, "B must start its own CVD, not inherit A's"

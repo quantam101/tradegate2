@@ -30,6 +30,11 @@ class EngineConfig:
     rolling_win_rate: float = 0.60      # updated from live ledger stats
     rolling_payout_ratio: float = 1.2   # avg win / avg loss from ledger
     cancel_after_sec: float = 30.0      # resting-order expiry (paper: queue TTL)
+    mom_window: int = 20                # bars for momentum lookback (trend input)
+    rsi_window: int = 14                # bars for RSI
+    rsi_overbought: float = 70.0        # alpha refuses entries above this
+    rsi_oversold: float = 35.0          # beta enters only below this
+    trend_min: float = 0.0              # min mom_window return to count as trend
     # ── Governance layer (spec: fat-finger guardrails, consensus, latency) ──
     max_notional_usd: float = 20_000_000.0   # absolute per-order notional cap
     max_slippage_bps: float = 40.0           # max deviation vs mid, basis points

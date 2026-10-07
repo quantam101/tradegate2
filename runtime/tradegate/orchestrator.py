@@ -87,8 +87,8 @@ class TradeGateOrchestrator:
         self.depth = DepthCvdAgent(q_depth, q_senti, self.store)
         self.sentiment = SentimentAgent(q_senti, q_regime_out)
         self.regime = RegimeAgent(q_regime_out, q_alpha, q_beta, q_drop, self.store)
-        self.alpha = AlphaStrategyAgent(q_alpha, q_signals)
-        self.beta = BetaStrategyAgent(q_beta, q_signals)
+        self.alpha = AlphaStrategyAgent(q_alpha, q_signals, self.store)
+        self.beta = BetaStrategyAgent(q_beta, q_signals, self.store)
         self.risk = RiskAgent(q_signals, q_risk, self.store, lambda: self.equity)
         self.execution = ExecutionAgent(q_risk, q_telem, self.broker, self.store)
         self.telemetry = TelemetryAgent(

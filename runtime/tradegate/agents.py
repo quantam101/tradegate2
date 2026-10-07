@@ -15,7 +15,7 @@ import time
 from collections import deque
 
 from .broker import Order, PaperBroker
-from .config import ConfigStore
+from .config import ConfigStore, EngineConfig
 from .events import MarketEvent, Side, Signal, Strategy
 
 log = logging.getLogger("tradegate")
@@ -45,7 +45,7 @@ class DepthCvdAgent:
 
     def __init__(self, q_in, q_out, store: ConfigStore, window: int = 50):
         self.q_in, self.q_out, self.store = q_in, q_out, store
-        self.cvd = 0.0
+        self.cvd: dict[str, float] = {}
         self.deltas = deque(maxlen=window)
 
     async def run(self) -> None:
@@ -56,7 +56,7 @@ class DepthCvdAgent:
                     await self.q_out.put(None)
                     return
                 t = evt.tick
-                evt.cvd = self.cvd = self.cvd + t.volume_delta
+                evt.cvd = self.cvd[t.symbol] = self.cvd.get(t.symbol, 0.0) + t.volume_delta
                 evt.imbalance = t.bids_depth / t.asks_depth if t.asks_depth > 0 else 1.0
                 evt.config_version = self.store.snapshot().version
                 await self.q_out.put(evt)
@@ -122,17 +122,50 @@ class RegimeAgent:
     def __init__(self, q_in, q_alpha, q_beta, q_drop, store: ConfigStore):
         self.q_in, self.q_alpha, self.q_beta, self.q_drop = q_in, q_alpha, q_beta, q_drop
         self.store = store
-        self.tr_window = deque(maxlen=64)
-        self.returns = deque(maxlen=64)
+        self._sym: dict[str, dict] = {}
 
-    def _atr(self, cfg) -> float:
-        if len(self.tr_window) < 2:
+    def _state(self, symbol: str) -> dict:
+        """Per-symbol indicator history — symbols must never share it."""
+        st = self._sym.get(symbol)
+        if st is None:
+            st = self._sym[symbol] = {
+                "tr": deque(maxlen=64),
+                "returns": deque(maxlen=64),
+                "prices": deque(maxlen=128),
+                "last": None,
+            }
+        return st
+
+    def _momentum(self, st, cfg) -> float:
+        """N-bar price return — real trend input on OHLCV data."""
+        w = int(cfg.mom_window) + 1
+        prices = st["prices"]
+        if len(prices) < w:
             return 0.0
-        trs = list(self.tr_window)[-cfg.atr_window:]
+        base = list(prices)[-w]
+        return prices[-1] / base - 1.0 if base else 0.0
+
+    def _rsi(self, st, cfg) -> float:
+        """Simple Wilder-style RSI over the last rsi_window returns."""
+        win = int(cfg.rsi_window)
+        rets = list(st["returns"])[-win:]
+        if len(rets) < win:
+            return 50.0
+        gains = sum(r for r in rets if r > 0)
+        losses = -sum(r for r in rets if r < 0)
+        if losses == 0:
+            return 100.0 if gains > 0 else 50.0
+        rs = gains / losses
+        return 100.0 - 100.0 / (1.0 + rs)
+
+    def _atr(self, st, cfg) -> float:
+        w = st["tr"]
+        if len(w) < 2:
+            return 0.0
+        trs = list(w)[-cfg.atr_window:]
         return sum(trs) / len(trs)
 
     async def run(self) -> None:
-        last_price: float | None = None
         while True:
             evt: MarketEvent | None = await self.q_in.get()
             try:
@@ -142,22 +175,34 @@ class RegimeAgent:
                     return
                 cfg = self.store.snapshot()
                 t = evt.tick
+                st = self._state(t.symbol)
+                last_price = st["last"]
                 if last_price:
                     tr = max(t.high - t.low, abs(t.high - last_price), abs(t.low - last_price))
-                    self.tr_window.append(tr)
-                    self.returns.append((t.price - last_price) / last_price)
-                last_price = t.price
-                evt.atr = self._atr(cfg)
+                    st["tr"].append(tr)
+                    st["returns"].append((t.price - last_price) / last_price)
+                st["last"] = t.price
+                st["prices"].append(t.price)
+                evt.atr = self._atr(st, cfg)
+                evt.momentum = self._momentum(st, cfg)
+                evt.rsi = self._rsi(st, cfg)
 
-                vol = statistics.pstdev(self.returns) if len(self.returns) > 10 else 0.0
-                trend = abs(sum(self.returns)) if len(self.returns) > 10 else 0.0
+                rets = st["returns"]
+                vol = statistics.pstdev(rets) if len(rets) > 10 else 0.0
 
                 if evt.imbalance >= cfg.min_imbalance and evt.cvd > cfg.cvd_min:
+                    # Real order-book data path (live feeds only)
                     evt.regime = "LIQUIDITY_SWEEP_BREAKOUT"
                     evt.votes.append({"agent": "regime", "side": Side.BUY.value,
                                       "confidence": min(1.0, evt.imbalance / (cfg.min_imbalance * 1.5))})
                     await self.q_alpha.put(evt)
-                elif 0.7 <= evt.imbalance < cfg.min_imbalance and vol > 0 and trend < vol * 8:
+                elif evt.momentum > cfg.trend_min:
+                    # Price-derived trend regime — works on any bar data
+                    evt.regime = "TREND_FOLLOW"
+                    evt.votes.append({"agent": "regime", "side": Side.BUY.value,
+                                      "confidence": min(1.0, evt.momentum / max(vol * cfg.mom_window ** 0.5, 1e-9))})
+                    await self.q_alpha.put(evt)
+                elif evt.momentum <= 0 and vol >= 0:
                     evt.regime = "MEAN_REVERSION_RANGE"
                     evt.votes.append({"agent": "regime", "side": Side.BUY.value,
                                       "confidence": 0.6})
@@ -173,10 +218,14 @@ class RegimeAgent:
 
 
 class AlphaStrategyAgent:
-    """Momentum entries on confirmed depth sweeps with positive CVD."""
+    """Momentum entries: depth sweeps on live feeds, price-trend on bars.
 
-    def __init__(self, q_in, q_out):
-        self.q_in, self.q_out = q_in, q_out
+    On bar data the entry is a real trend-follow rule: momentum positive
+    but RSI not overbought (don't chase the top of a stretched move).
+    """
+
+    def __init__(self, q_in, q_out, store: ConfigStore | None = None):
+        self.q_in, self.q_out, self.store = q_in, q_out, store
 
     async def run(self) -> None:
         while True:
@@ -185,21 +234,28 @@ class AlphaStrategyAgent:
                 if evt is None:
                     await self.q_out.put(None)
                     return
-                evt.signal = Signal(Side.BUY, Strategy.ALPHA_MOMENTUM,
-                                    f"imbalance={evt.imbalance:.2f} cvd={evt.cvd:.1f}")
-                evt.votes.append({"agent": "alpha", "side": Side.BUY.value,
-                                  "confidence": min(1.0, evt.imbalance / 3.0)})
+                cfg = self.store.snapshot() if self.store else EngineConfig()
+                sweep = evt.regime == "LIQUIDITY_SWEEP_BREAKOUT"
+                buy = sweep or (evt.momentum > 0 and evt.rsi < cfg.rsi_overbought)
+                evt.signal = Signal(
+                    Side.BUY if buy else Side.HOLD, Strategy.ALPHA_MOMENTUM,
+                    f"mom={evt.momentum:+.3f} rsi={evt.rsi:.0f} imb={evt.imbalance:.2f}")
+                evt.votes.append({"agent": "alpha",
+                                  "side": Side.BUY.value if buy else Side.HOLD.value,
+                                  "confidence": (min(1.0, evt.imbalance / 3.0) if sweep
+                                                 else min(1.0, abs(evt.momentum) * 10))
+                                  if buy else 0.0})
                 await self.q_out.put(evt)
             finally:
                 self.q_in.task_done()
 
 
 class BetaStrategyAgent:
-    """Mean-reversion entries on range dips: buy after a down tick in a range."""
+    """Mean-reversion entries: buy only genuinely oversold ranges."""
 
-    def __init__(self, q_in, q_out):
-        self.q_in, self.q_out = q_in, q_out
-        self.prev_price: float | None = None
+    def __init__(self, q_in, q_out, store: ConfigStore | None = None):
+        self.q_in, self.q_out, self.store = q_in, q_out, store
+        self.prev_price: float | None = None  # kept for future dip-weighted sizing
 
     async def run(self) -> None:
         while True:
@@ -208,14 +264,16 @@ class BetaStrategyAgent:
                 if evt is None:
                     await self.q_out.put(None)
                     return
-                dip = self.prev_price is not None and evt.tick.price < self.prev_price
+                cfg = self.store.snapshot() if self.store else EngineConfig()
                 self.prev_price = evt.tick.price
+                buy = evt.rsi <= cfg.rsi_oversold
                 evt.signal = Signal(
-                    Side.BUY if dip else Side.HOLD, Strategy.BETA_REVERSION,
-                    "range dip" if dip else "range, no dip")
+                    Side.BUY if buy else Side.HOLD, Strategy.BETA_REVERSION,
+                    f"rsi={evt.rsi:.0f} oversold={cfg.rsi_oversold:.0f}"
+                    if buy else "range, not oversold")
                 evt.votes.append({"agent": "beta",
-                                  "side": Side.BUY.value if dip else Side.HOLD.value,
-                                  "confidence": 0.7 if dip else 0.0})
+                                  "side": Side.BUY.value if buy else Side.HOLD.value,
+                                  "confidence": 0.7 if buy else 0.0})
                 await self.q_out.put(evt)
             finally:
                 self.q_in.task_done()

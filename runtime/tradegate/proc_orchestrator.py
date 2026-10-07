@@ -102,12 +102,12 @@ def _f_regime(q, store, _s):
 
 def _f_alpha(q, store, _s):
     from .agents import AlphaStrategyAgent
-    return AlphaStrategyAgent(q("in"), q("out"))
+    return AlphaStrategyAgent(q("in"), q("out"), store)
 
 
 def _f_beta(q, store, _s):
     from .agents import BetaStrategyAgent
-    return BetaStrategyAgent(q("in"), q("out"))
+    return BetaStrategyAgent(q("in"), q("out"), store)
 
 
 def _f_risk(q, store, shared):
