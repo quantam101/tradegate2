@@ -122,22 +122,33 @@ class RegimeAgent:
     def __init__(self, q_in, q_alpha, q_beta, q_drop, store: ConfigStore):
         self.q_in, self.q_alpha, self.q_beta, self.q_drop = q_in, q_alpha, q_beta, q_drop
         self.store = store
-        self.tr_window = deque(maxlen=64)
-        self.returns = deque(maxlen=64)
-        self.prices = deque(maxlen=128)
+        self._sym: dict[str, dict] = {}
 
-    def _momentum(self, cfg) -> float:
+    def _state(self, symbol: str) -> dict:
+        """Per-symbol indicator history — symbols must never share it."""
+        st = self._sym.get(symbol)
+        if st is None:
+            st = self._sym[symbol] = {
+                "tr": deque(maxlen=64),
+                "returns": deque(maxlen=64),
+                "prices": deque(maxlen=128),
+                "last": None,
+            }
+        return st
+
+    def _momentum(self, st, cfg) -> float:
         """N-bar price return — real trend input on OHLCV data."""
         w = int(cfg.mom_window) + 1
-        if len(self.prices) < w:
+        prices = st["prices"]
+        if len(prices) < w:
             return 0.0
-        base = list(self.prices)[-w]
-        return self.prices[-1] / base - 1.0 if base else 0.0
+        base = list(prices)[-w]
+        return prices[-1] / base - 1.0 if base else 0.0
 
-    def _rsi(self, cfg) -> float:
+    def _rsi(self, st, cfg) -> float:
         """Simple Wilder-style RSI over the last rsi_window returns."""
         win = int(cfg.rsi_window)
-        rets = list(self.returns)[-win:]
+        rets = list(st["returns"])[-win:]
         if len(rets) < win:
             return 50.0
         gains = sum(r for r in rets if r > 0)
@@ -147,14 +158,14 @@ class RegimeAgent:
         rs = gains / losses
         return 100.0 - 100.0 / (1.0 + rs)
 
-    def _atr(self, cfg) -> float:
-        if len(self.tr_window) < 2:
+    def _atr(self, st, cfg) -> float:
+        w = st["tr"]
+        if len(w) < 2:
             return 0.0
-        trs = list(self.tr_window)[-cfg.atr_window:]
+        trs = list(w)[-cfg.atr_window:]
         return sum(trs) / len(trs)
 
     async def run(self) -> None:
-        last_price: float | None = None
         while True:
             evt: MarketEvent | None = await self.q_in.get()
             try:
@@ -164,17 +175,20 @@ class RegimeAgent:
                     return
                 cfg = self.store.snapshot()
                 t = evt.tick
+                st = self._state(t.symbol)
+                last_price = st["last"]
                 if last_price:
                     tr = max(t.high - t.low, abs(t.high - last_price), abs(t.low - last_price))
-                    self.tr_window.append(tr)
-                    self.returns.append((t.price - last_price) / last_price)
-                last_price = t.price
-                self.prices.append(t.price)
-                evt.atr = self._atr(cfg)
-                evt.momentum = self._momentum(cfg)
-                evt.rsi = self._rsi(cfg)
+                    st["tr"].append(tr)
+                    st["returns"].append((t.price - last_price) / last_price)
+                st["last"] = t.price
+                st["prices"].append(t.price)
+                evt.atr = self._atr(st, cfg)
+                evt.momentum = self._momentum(st, cfg)
+                evt.rsi = self._rsi(st, cfg)
 
-                vol = statistics.pstdev(self.returns) if len(self.returns) > 10 else 0.0
+                rets = st["returns"]
+                vol = statistics.pstdev(rets) if len(rets) > 10 else 0.0
 
                 if evt.imbalance >= cfg.min_imbalance and evt.cvd > cfg.cvd_min:
                     # Real order-book data path (live feeds only)
@@ -221,13 +235,16 @@ class AlphaStrategyAgent:
                     await self.q_out.put(None)
                     return
                 cfg = self.store.snapshot() if self.store else EngineConfig()
-                buy = evt.momentum > 0 and evt.rsi < cfg.rsi_overbought
+                sweep = evt.regime == "LIQUIDITY_SWEEP_BREAKOUT"
+                buy = sweep or (evt.momentum > 0 and evt.rsi < cfg.rsi_overbought)
                 evt.signal = Signal(
                     Side.BUY if buy else Side.HOLD, Strategy.ALPHA_MOMENTUM,
                     f"mom={evt.momentum:+.3f} rsi={evt.rsi:.0f} imb={evt.imbalance:.2f}")
                 evt.votes.append({"agent": "alpha",
                                   "side": Side.BUY.value if buy else Side.HOLD.value,
-                                  "confidence": min(1.0, abs(evt.momentum) * 10) if buy else 0.0})
+                                  "confidence": (min(1.0, evt.imbalance / 3.0) if sweep
+                                                 else min(1.0, abs(evt.momentum) * 10))
+                                  if buy else 0.0})
                 await self.q_out.put(evt)
             finally:
                 self.q_in.task_done()
