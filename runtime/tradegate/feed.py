@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import math
 import random
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import AsyncIterator, Optional, Protocol
+from typing import Protocol
 
 
 class MarketDataSource(Protocol):
@@ -21,7 +21,7 @@ class MarketDataSource(Protocol):
 
 
 # import here to keep the public Protocol above the fold
-from .events import Tick  # noqa: E402
+from .events import Tick
 
 
 class ReplayFeed:
@@ -31,7 +31,7 @@ class ReplayFeed:
         self.path = Path(path)
         self.pace = pace  # seconds between ticks; 0 = as fast as possible
 
-    async def stream(self, symbol: Optional[str] = None) -> AsyncIterator[Tick]:
+    async def stream(self, symbol: str | None = None) -> AsyncIterator[Tick]:
         with self.path.open() as f:
             for line in f:
                 line = line.strip()
@@ -61,7 +61,7 @@ class SyntheticFeed:
         self.interval = interval
         self.rng = random.Random(seed)
 
-    async def stream(self, symbol: Optional[str] = None) -> AsyncIterator[Tick]:
+    async def stream(self, symbol: str | None = None) -> AsyncIterator[Tick]:
         if symbol and symbol != self.symbol:
             return
         rng, price = self.rng, self.price

@@ -9,11 +9,10 @@ market never revisits is dropped), and keeps an append-only fill ledger.
 from __future__ import annotations
 
 import json
-import time
 import uuid
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Protocol
+from typing import Protocol
 
 from .events import Side, Strategy, Tick
 
@@ -63,9 +62,9 @@ class Fill:
 
 
 class Broker(Protocol):
-    async def submit(self, order: Order, ref_price: float) -> Optional[Fill]: ...
-    async def on_tick(self, tick: Tick) -> List[Fill]: ...
-    async def close_all(self, ref_price: float, ts: float) -> List[Fill]: ...
+    async def submit(self, order: Order, ref_price: float) -> Fill | None: ...
+    async def on_tick(self, tick: Tick) -> list[Fill]: ...
+    async def close_all(self, ref_price: float, ts: float) -> list[Fill]: ...
 
 
 class PaperBroker:
@@ -79,10 +78,11 @@ class PaperBroker:
     at close. Trailing stop ratchets with new highs.
     """
 
-    def __init__(self, ledger_path: Optional[Path] = None, fee_bps: float = 1.0):
-        self.positions: Dict[str, Position] = {}
-        self.resting: Dict[str, Order] = {}
-        self.fills: List[Fill] = []
+    def __init__(self, ledger_path: Path | None = None, fee_bps: float = 1.0):
+        self.last_px = {}
+        self.positions: dict[str, Position] = {}
+        self.resting: dict[str, Order] = {}
+        self.fills: list[Fill] = []
         self.fee_bps = fee_bps
         self.ledger_path = Path(ledger_path) if ledger_path else None
         if self.ledger_path:
@@ -94,7 +94,10 @@ class PaperBroker:
             with self.ledger_path.open("a") as f:
                 f.write(json.dumps(asdict(fill), default=str) + "\n")
 
-    async def submit(self, order: Order, ref_price: float) -> Optional[Fill]:
+    async def submit(self, order: Order, ref_price: float) -> Fill | None:
+        if self.breaker_tripped:
+            return None  # liquidation latched — no new entries post-breaker
+        self.last_px[order.symbol] = ref_price
         if order.symbol in self.positions:
             return None  # one position per symbol
         qty = order.capital / ref_price
@@ -113,12 +116,14 @@ class PaperBroker:
         self._record(fill)
         return fill
 
-    async def on_tick(self, tick: Tick) -> List[Fill]:
-        out: List[Fill] = []
+    async def on_tick(self, tick: Tick) -> list[Fill]:
+        out: list[Fill] = []
+        self._breaker_hit()  # seed/update the equity peak before any exits
+        self.last_px[tick.symbol] = tick.price
         pos = self.positions.get(tick.symbol)
         if not pos:
             return out
-        exit_fill: Optional[Fill] = None
+        exit_fill: Fill | None = None
         if pos.side == Side.BUY:
             pos.peak_price = max(pos.peak_price, tick.high)
             # ratchet trailing stop with price advances
@@ -130,7 +135,48 @@ class PaperBroker:
                 exit_fill = self._exit(pos, pos.take_profit, tick.timestamp, "EXIT_TP")
         if exit_fill:
             out.append(exit_fill)
+            # Realized-equity breaker: a loss this tick can breach the
+            # drawdown limit with no new signal arriving — flatten
+            # remaining positions immediately rather than waiting for
+            # RiskAgent to see another signal.
+            if self._breaker_hit():
+                for p in list(self.positions.values()):
+                    out.append(self._exit(
+                        p, self.last_px.get(p.symbol, p.entry_price),
+                        tick.timestamp, "EXIT_KILL"))
         return out
+
+    def _breaker_hit(self) -> bool:
+        """Owner-wired drawdown check on realized equity. Latches
+        ``breaker_tripped`` so no new entries slip in post-liquidation."""
+        limit = (self.drawdown_limit_ref() if self.drawdown_limit_ref
+                 else self.max_drawdown_limit)
+        if not self.equity_ref or not limit:
+            return False
+        eq = self.equity_ref()
+        self._breaker_peak = max(self._breaker_peak or eq, eq)
+        if self._breaker_peak > 0 and \
+                1 - eq / self._breaker_peak >= limit:
+            self.breaker_tripped = True
+            return True
+        return False
+
+    # equity_ref / drawdown_limit_ref / max_drawdown_limit / _breaker_peak
+    # are set by the owner (orchestrator / backtest / proc child). The ref
+    # form reads the limit live so ConfigStore.swap() stays authoritative;
+    # the static attr is a fallback. None / 0 disables the check.
+    equity_ref = None
+    drawdown_limit_ref = None
+    max_drawdown_limit = 0.0
+    breaker_tripped = False
+    _breaker_peak = None
+    last_px: dict = {}
+
+    def cancel_all(self) -> int:
+        """Kill-switch: drop every resting (unfilled) order. Returns count."""
+        n = len(self.resting)
+        self.resting.clear()
+        return n
 
     def _exit(self, pos: Position, price: float, ts: float, kind: str) -> Fill:
         gross = (price - pos.entry_price) * pos.qty
@@ -141,7 +187,7 @@ class PaperBroker:
         self._record(fill)
         return fill
 
-    async def close_all(self, ref_price: float, ts: float) -> List[Fill]:
+    async def close_all(self, ref_price: float, ts: float) -> list[Fill]:
         out = []
         for pos in list(self.positions.values()):
             out.append(self._exit(pos, ref_price, ts, "EXIT_EOD"))

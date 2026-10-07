@@ -14,11 +14,19 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Optional
 
-from .agents import (AlphaStrategyAgent, BetaStrategyAgent, DepthCvdAgent,
-                     ExecutionAgent, IngestAgent, OptimizerAgent,
-                     RegimeAgent, RiskAgent, TelemetryAgent)
+from .agents import (
+    AlphaStrategyAgent,
+    BetaStrategyAgent,
+    DepthCvdAgent,
+    ExecutionAgent,
+    IngestAgent,
+    OptimizerAgent,
+    RegimeAgent,
+    RiskAgent,
+    SentimentAgent,
+    TelemetryAgent,
+)
 from .broker import PaperBroker
 from .config import ConfigStore
 from .feed import MarketDataSource
@@ -27,22 +35,28 @@ log = logging.getLogger("tradegate")
 
 
 class TradeGateOrchestrator:
-    def __init__(self, store: Optional[ConfigStore] = None,
+    def __init__(self, store: ConfigStore | None = None,
                  initial_capital: float = 1000.0,
-                 ledger_path: Optional[Path] = None,
-                 audit_path: Optional[Path] = None,
-                 discord_url: Optional[str] = None,
-                 telegram_token: Optional[str] = None,
-                 telegram_chat: Optional[str] = None,
+                 ledger_path: Path | None = None,
+                 audit_path: Path | None = None,
+                 discord_url: str | None = None,
+                 telegram_token: str | None = None,
+                 telegram_chat: str | None = None,
                  optimizer_interval: float = 3600.0,
                  optimizer_objective=None):
         self.store = store or ConfigStore()
         self.initial_capital = initial_capital
         self.equity = initial_capital
         self.broker = PaperBroker(ledger_path=ledger_path)
+        # Realized-equity breaker: flatten fires the tick a loss breaches
+        # the limit, even with no new signal in flight.
+        self.broker.equity_ref = lambda: self.equity
+        self.broker.drawdown_limit_ref = (
+            lambda: self.store.snapshot().max_drawdown_limit)
         self.audit_path = Path(audit_path) if audit_path else None
 
         q_depth, q_regime_out = asyncio.Queue(), asyncio.Queue()
+        q_senti = asyncio.Queue()
         q_alpha, q_beta, q_drop = asyncio.Queue(), asyncio.Queue(), asyncio.Queue()
         q_risk, q_exec, q_telem = asyncio.Queue(), asyncio.Queue(), asyncio.Queue()
 
@@ -54,7 +68,7 @@ class TradeGateOrchestrator:
         self._aux_queues = (q_regime_out, q_alpha, q_beta, q_drop, q_risk, q_exec)
         # every queue an event traverses, in order — used to flush the mesh
         # per tick on un-paced feeds (replay/synthetic) so exits stay honest
-        self.stages = (q_depth, q_regime_out, q_alpha, q_beta,
+        self.stages = (q_depth, q_senti, q_regime_out, q_alpha, q_beta,
                        q_signals, q_risk, q_exec, q_telem)
 
         def audit(rec):
@@ -70,7 +84,8 @@ class TradeGateOrchestrator:
         self.broker._record = record  # type: ignore[attr-defined]
 
         self.ingest = IngestAgent(q_depth)
-        self.depth = DepthCvdAgent(q_depth, q_regime_out, self.store)
+        self.depth = DepthCvdAgent(q_depth, q_senti, self.store)
+        self.sentiment = SentimentAgent(q_senti, q_regime_out)
         self.regime = RegimeAgent(q_regime_out, q_alpha, q_beta, q_drop, self.store)
         self.alpha = AlphaStrategyAgent(q_alpha, q_signals)
         self.beta = BetaStrategyAgent(q_beta, q_signals)
@@ -83,12 +98,13 @@ class TradeGateOrchestrator:
                                          optimizer_objective, optimizer_interval)
                           if optimizer_objective else None)
 
-    async def run(self, feed: MarketDataSource, symbol: Optional[str] = None,
+    async def run(self, feed: MarketDataSource, symbol: str | None = None,
                   run_optimizer: bool = False) -> None:
         # Alpha and beta each forward a sentinel into q_signals at end of
         # stream; RiskAgent returns on the first and the second is dropped.
         tasks = [
             asyncio.create_task(self.depth.run()),
+            asyncio.create_task(self.sentiment.run()),
             asyncio.create_task(self.regime.run()),
             asyncio.create_task(self.alpha.run()),
             asyncio.create_task(self.beta.run()),
@@ -132,7 +148,7 @@ class _TapFeed:
                  stages=()):
         self.inner, self.broker, self.stages = inner, broker, stages
 
-    async def stream(self, symbol: Optional[str] = None):
+    async def stream(self, symbol: str | None = None):
         async for tick in self.inner.stream(symbol):
             await self.broker.on_tick(tick)
             yield tick

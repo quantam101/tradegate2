@@ -9,10 +9,10 @@ placeholder — the objective here is the real replay backtester.
 from __future__ import annotations
 
 import random
-from typing import Callable, Dict, List, Tuple
+from collections.abc import Callable
 
 # name -> (low, high, step)
-SEARCH_SPACE: Dict[str, Tuple[float, float, float]] = {
+SEARCH_SPACE: dict[str, tuple[float, float, float]] = {
     "min_imbalance": (1.6, 3.2, 0.1),
     "atr_multiplier": (1.2, 2.6, 0.1),
     "safety_factor": (0.15, 0.50, 0.05),
@@ -33,16 +33,16 @@ def _sample(space, rng, good_trials=None):
             for n, (lo, hi, step) in space.items()}
 
 
-def tpe_search(objective: Callable[[dict], Tuple[float, dict]],
+def tpe_search(objective: Callable[[dict], tuple[float, dict]],
                n_trials: int = 24, warmup: int = 8,
-               seed: int = 42) -> Tuple[float, dict, List[dict]]:
+               seed: int = 42) -> tuple[float, dict, list[dict]]:
     """Returns (best_score, best_params, all_trials).
 
     ``objective(params) -> (score, report)``; report rides along for
     telemetry/audit.
     """
     rng = random.Random(seed)
-    trials: List[dict] = []
+    trials: list[dict] = []
     for i in range(n_trials):
         good = sorted((t for t in trials if t["score"] > float("-inf")),
                       key=lambda t: t["score"], reverse=True)[:max(1, len(trials) // 4)]
@@ -54,7 +54,7 @@ def tpe_search(objective: Callable[[dict], Tuple[float, dict]],
 
 
 def walk_forward_windows(ticks: list, n_windows: int = 3,
-                         train_frac: float = 0.7) -> List[tuple]:
+                         train_frac: float = 0.7) -> list[tuple]:
     """Split an ordered tick list into rolling (train, test) windows —
     out-of-sample evaluation, not curve-fitting on one period."""
     w = len(ticks) // (n_windows + 1)

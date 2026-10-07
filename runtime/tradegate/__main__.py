@@ -76,6 +76,18 @@ def main(argv=None):
                if "--capital" in argv else 10000.0)
         run_daily(syms, capital=cap)
 
+    elif mode == "procpaper":
+        # Process-per-agent mesh: every stage in its own OS process.
+        from .proc_orchestrator import run_procs
+        steps = int(argv[argv.index("--steps") + 1]) if "--steps" in argv else 2000
+        sym = argv[argv.index("--symbol") + 1] if "--symbol" in argv else "PAPER/USD"
+        print(json.dumps(asyncio.run(run_procs(symbol=sym, steps=steps)), indent=2))
+
+    elif mode == "sentiment":
+        from .sentiment import main as sentiment_main
+        sentiment_main(argv[1:])
+
+
     else:
         print(__doc__)
         sys.exit(1)

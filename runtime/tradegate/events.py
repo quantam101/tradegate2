@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 
 class Side(str, Enum):
@@ -74,6 +73,11 @@ class MarketEvent:
     take_profit: float = 0.0
     config_version: int = 0
     ingest_ts: float = field(default_factory=time.time)
+    # ── Governance stamps ──────────────────────────────────────────────
+    votes: list = field(default_factory=list)  # {agent, side, confidence}
+    sentiment: float = 0.0                     # [-1,1] from SentimentAgent
+    degraded: bool = False                     # latency-anomaly passive mode
+    halt: bool = False                         # drawdown kill-switch: flatten all
 
     def latency_ms(self) -> float:
         return (time.time() - self.ingest_ts) * 1000.0

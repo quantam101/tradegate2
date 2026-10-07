@@ -11,9 +11,8 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -31,6 +30,13 @@ class EngineConfig:
     rolling_win_rate: float = 0.60      # updated from live ledger stats
     rolling_payout_ratio: float = 1.2   # avg win / avg loss from ledger
     cancel_after_sec: float = 30.0      # resting-order expiry (paper: queue TTL)
+    # ── Governance layer (spec: fat-finger guardrails, consensus, latency) ──
+    max_notional_usd: float = 20_000_000.0   # absolute per-order notional cap
+    max_slippage_bps: float = 40.0           # max deviation vs mid, basis points
+    consensus_threshold_usd: float = 2_000_000.0  # orders above need quorum
+    consensus_min_votes: int = 3             # of the 4 voting agents
+    consensus_min_score: float = 0.82        # min mean confidence across votes
+    latency_degrade_ms: float = 15_000.0     # >this lag → passive-only mode
     version: int = 1
     last_updated: float = field(default_factory=time.time)
 
@@ -45,8 +51,8 @@ class ConfigStore:
     versions, persists (if manifest_path set) and atomically replaces it.
     """
 
-    def __init__(self, config: Optional[EngineConfig] = None,
-                 manifest_path: Optional[Path] = None):
+    def __init__(self, config: EngineConfig | None = None,
+                 manifest_path: Path | None = None):
         self._config = config or EngineConfig()
         self.manifest_path = Path(manifest_path) if manifest_path else None
         self._listeners = []
@@ -74,7 +80,7 @@ class ConfigStore:
         return new
 
     @classmethod
-    def from_manifest(cls, path: Path) -> "ConfigStore":
+    def from_manifest(cls, path: Path) -> ConfigStore:
         p = Path(path)
         if p.exists():
             return cls(EngineConfig(**json.loads(p.read_text())), manifest_path=p)

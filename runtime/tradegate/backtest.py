@@ -9,17 +9,22 @@ from __future__ import annotations
 import asyncio
 import math
 import statistics
-from dataclasses import asdict
-from typing import Iterable, List, Optional
+from collections.abc import Iterable
 
-from .agents import (AlphaStrategyAgent, BetaStrategyAgent, DepthCvdAgent,
-                     ExecutionAgent, RegimeAgent, RiskAgent)
+from .agents import (
+    AlphaStrategyAgent,
+    BetaStrategyAgent,
+    DepthCvdAgent,
+    ExecutionAgent,
+    RegimeAgent,
+    RiskAgent,
+)
 from .broker import PaperBroker
 from .config import ConfigStore, EngineConfig
 from .events import MarketEvent, Tick
 
 
-def _equity_curve(initial: float, exits) -> List[float]:
+def _equity_curve(initial: float, exits) -> list[float]:
     eq, curve = initial, []
     for f in sorted(exits, key=lambda f: f.ts):
         eq += f.pnl
@@ -63,6 +68,8 @@ async def _run_pipeline(ticks: Iterable[Tick], config: EngineConfig,
     store = ConfigStore(config)
     broker = PaperBroker()
     equity = {"v": initial_capital}
+    broker.equity_ref = lambda: equity["v"]
+    broker.max_drawdown_limit = config.max_drawdown_limit
 
     q_depth, q_alpha, q_beta, q_sig, q_risk, q_exec = (
         asyncio.Queue(), asyncio.Queue(), asyncio.Queue(),
@@ -88,7 +95,7 @@ async def _run_pipeline(ticks: Iterable[Tick], config: EngineConfig,
     # q_sig.join() covers the drop path too: RegimeAgent task_done's its
     # input only after the event lands on q_drop.
     stages = (q_depth, q_sig, q_alpha, q_beta, q_risk, q_exec)
-    last_tick: Optional[Tick] = None
+    last_tick: Tick | None = None
     for tick in ticks:
         last_tick = tick
         # exits fire before new signals see the tick
@@ -106,7 +113,7 @@ async def _run_pipeline(ticks: Iterable[Tick], config: EngineConfig,
     return broker
 
 
-def run_backtest(ticks: Iterable[Tick], config: Optional[EngineConfig] = None,
+def run_backtest(ticks: Iterable[Tick], config: EngineConfig | None = None,
                  initial_capital: float = 1000.0) -> dict:
     broker = asyncio.run(_run_pipeline(list(ticks),
                                      config or EngineConfig(),
