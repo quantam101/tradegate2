@@ -246,9 +246,11 @@ class RiskAgent:
     def _quorum(self, evt: MarketEvent, cfg) -> bool:
         """Consensus rule: orders above the notional threshold need
         >= consensus_min_votes votes each at >= consensus_min_score
-        confidence (spec: 3/4 quorum at >0.82)."""
+        confidence AND agreeing with the order's side (spec: 3/4 quorum
+        at >0.82). Opposing votes never count toward approval."""
         good = [v for v in evt.votes
-                if v.get("confidence", 0.0) >= cfg.consensus_min_score]
+                if v.get("side") == evt.signal.side.value
+                and v.get("confidence", 0.0) >= cfg.consensus_min_score]
         return len(good) >= cfg.consensus_min_votes
 
     @staticmethod
@@ -269,14 +271,21 @@ class RiskAgent:
                 equity = self.equity_ref()
                 self.peak_equity = max(self.peak_equity or equity, equity)
                 dd = 1 - equity / self.peak_equity
-                if self.halted or dd >= cfg.max_drawdown_limit:
-                    if not self.halted and self.on_halt:
-                        # Kill-switch: cancel resting orders + flatten to cash
+                if self.halted:
+                    continue
+                if dd >= cfg.max_drawdown_limit:
+                    self.halted = True
+                    # Kill-switch: mark the event so ExecutionAgent flattens
+                    # all positions and cancels resting orders — the halt
+                    # travels the mesh, so it can't be skipped by callbacks
+                    # or lost across process boundaries.
+                    evt.halt = True
+                    if self.on_halt:
                         try:
                             await self.on_halt(evt.tick.price, evt.tick.timestamp)
                         except Exception as e:  # noqa: BLE001 — breaker must never kill the agent loop
-                            log.error("[Agent 6] kill-switch flatten failed: %s", e)
-                    self.halted = True
+                            log.error("[Agent 6] kill-switch callback failed: %s", e)
+                    await self.q_out.put(evt)
                     log.warning("[Agent 6] drawdown breaker tripped (%.2f%% >= %.2f%%) — halting",
                                 dd * 100, cfg.max_drawdown_limit * 100)
                     continue
@@ -316,10 +325,16 @@ class RiskAgent:
 class ExecutionAgent:
     """Submits sized orders to the broker and applies order-expiry rules."""
 
-    def __init__(self, q_in, q_out, broker: PaperBroker, store: ConfigStore):
+    def __init__(self, q_in, q_out, broker: PaperBroker, store: ConfigStore,
+                 drive_exits: bool = False, equity_probe=None):
         self.q_in, self.q_out, self.broker, self.store = q_in, q_out, broker, store
         self.cancellations = 0
         self.degraded_skips = 0
+        # drive_exits: evaluate exits per event (proc-mesh mode, where the
+        # feed can't reach this process's broker); equity_probe: callable
+        # reporting broker net pnl for a shared-equity channel.
+        self.drive_exits = drive_exits
+        self.equity_probe = equity_probe
 
     async def run(self) -> None:
         while True:
@@ -329,6 +344,23 @@ class ExecutionAgent:
                     await self.q_out.put(None)
                     return
                 cfg = self.store.snapshot()
+                if self.drive_exits:
+                    for f in await self.broker.on_tick(evt.tick):
+                        await self.q_out.put((evt, f))
+                if self.equity_probe:
+                    self.equity_probe(self.broker.stats().get("net_pnl", 0.0))
+                # Kill-switch event from RiskAgent: flatten everything and
+                # emit a KILL_SWITCH marker for telemetry.
+                if evt.halt:
+                    cancelled = self.broker.cancel_all()
+                    fills = await self.broker.close_all(evt.tick.price,
+                                                      evt.tick.timestamp)
+                    evt.signal.reason += (f" | KILL_SWITCH flattened={len(fills)}"
+                                          f" cancelled={cancelled}")
+                    for f in fills:
+                        await self.q_out.put((evt, f))
+                    await self.q_out.put((evt, None))
+                    continue
                 # Latency anomaly: beyond the degrade threshold the spec drops
                 # to passive market-making — our venue is market orders, so
                 # "passive" here means *refuse the entry* rather than chase.
@@ -404,6 +436,15 @@ class TelemetryAgent:
                 if item is None:
                     return
                 evt, fill = item
+                if fill is None:
+                    # kill-switch marker — no fill, just the record
+                    await self.emit("KILL_SWITCH", {
+                        "text": evt.signal.reason,
+                        "symbol": evt.tick.symbol,
+                        "regime": evt.regime,
+                        "config_version": evt.config_version,
+                    })
+                    continue
                 await self.emit("TRADE_FILL", {
                     "text": (f"{fill.side.value} {fill.symbol} qty={fill.qty:.4f} "
                              f"@ {fill.price:.2f} ({evt.signal.strategy.value})"),

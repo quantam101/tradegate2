@@ -48,6 +48,10 @@ class TradeGateOrchestrator:
         self.initial_capital = initial_capital
         self.equity = initial_capital
         self.broker = PaperBroker(ledger_path=ledger_path)
+        # Realized-equity breaker: flatten fires the tick a loss breaches
+        # the limit, even with no new signal in flight.
+        self.broker.equity_ref = lambda: self.equity
+        self.broker.max_drawdown_limit = self.store.snapshot().max_drawdown_limit
         self.audit_path = Path(audit_path) if audit_path else None
 
         q_depth, q_regime_out = asyncio.Queue(), asyncio.Queue()
@@ -78,24 +82,13 @@ class TradeGateOrchestrator:
             self.equity += fill.pnl
         self.broker._record = record  # type: ignore[attr-defined]
 
-        async def _flatten(price: float, ts: float) -> None:
-            cancelled = self.broker.cancel_all()
-            fills = await self.broker.close_all(price, ts)
-            log.warning("kill-switch: cancelled %d resting, flattened %d positions",
-                        cancelled, len(fills))
-            await self.telemetry.emit("KILL_SWITCH", {
-                "text": f"Drawdown breaker tripped — flattened {len(fills)} "
-                        f"positions, cancelled {cancelled} resting orders",
-                "cancelled": cancelled, "flattened": len(fills)})
-
         self.ingest = IngestAgent(q_depth)
         self.depth = DepthCvdAgent(q_depth, q_senti, self.store)
         self.sentiment = SentimentAgent(q_senti, q_regime_out)
         self.regime = RegimeAgent(q_regime_out, q_alpha, q_beta, q_drop, self.store)
         self.alpha = AlphaStrategyAgent(q_alpha, q_signals)
         self.beta = BetaStrategyAgent(q_beta, q_signals)
-        self.risk = RiskAgent(q_signals, q_risk, self.store,
-                              lambda: self.equity, on_halt=_flatten)
+        self.risk = RiskAgent(q_signals, q_risk, self.store, lambda: self.equity)
         self.execution = ExecutionAgent(q_risk, q_telem, self.broker, self.store)
         self.telemetry = TelemetryAgent(
             q_telem, audit_log=audit, discord_url=discord_url,

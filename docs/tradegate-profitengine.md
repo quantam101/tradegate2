@@ -46,7 +46,7 @@ trail.
 | Slippage vs mid | `max_slippage_bps` (default 40bps) | Veto if ref price deviates from bid/ask mid beyond the cap |
 | Consensus quorum | `consensus_threshold_usd`, `consensus_min_votes`, `consensus_min_score` (default $2M / 3 votes / 0.82) | Orders above the threshold need ≥N agent votes each ≥ the confidence score; sentiment, regime, alpha/beta agents each cast votes |
 | Latency degrade | `latency_degrade_ms` (default 15s) | A7 refuses new entries on stale events — our venue is market orders, so "degrade to passive" means refuse rather than chase |
-| Kill-switch | `max_drawdown_limit` | On first breaker trip A6 calls `on_halt` → `broker.cancel_all()` + `broker.close_all()` and emits a `KILL_SWITCH` telemetry event |
+| Kill-switch | `max_drawdown_limit` | Two layers: (a) the broker trips on realized equity the tick a losing exit fills — flattens remaining positions immediately (`EXIT_KILL`), no signal required; (b) A6 marks `evt.halt` → A7 `cancel_all` + `close_all` + emits a `KILL_SWITCH` telemetry record |
 | Sentiment veto | `data/tradegate/sentiment.json` | A2.5 stamps `evt.sentiment` (lexicon or free-LLM score in [-1,1]); A6 vetoes BUYs when sentiment ≤ -0.5 |
 
 ## Sentiment feed

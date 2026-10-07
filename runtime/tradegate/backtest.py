@@ -68,6 +68,8 @@ async def _run_pipeline(ticks: Iterable[Tick], config: EngineConfig,
     store = ConfigStore(config)
     broker = PaperBroker()
     equity = {"v": initial_capital}
+    broker.equity_ref = lambda: equity["v"]
+    broker.max_drawdown_limit = config.max_drawdown_limit
 
     q_depth, q_alpha, q_beta, q_sig, q_risk, q_exec = (
         asyncio.Queue(), asyncio.Queue(), asyncio.Queue(),

@@ -140,20 +140,84 @@ def test_notional_cap():
 
 def test_killswitch_flattens_and_cancels():
     store = ConfigStore()
-    halt_calls = []
     broker = PaperBroker()
-
-    async def on_halt(price, ts):
-        halt_calls.append((price, ts))
-        broker.cancel_all()
-        await broker.close_all(price, ts)
 
     # equity drops 50% vs the peak — drawdown breaker trips on event 2
     equity_seq = iter([1000.0, 500.0])
-    risk, _qin, q_out = _risk(store, equity=0.0, on_halt=on_halt)
+    risk, _qin, q_out = _risk(store, equity=0.0)
     risk.equity_ref = lambda: next(equity_seq)
-    asyncio.run(_drive(risk, [_evt(), _evt()], q_out))
-    assert risk.halted and len(halt_calls) == 1
+    out = asyncio.run(_drive(risk, [_evt(), _evt()], q_out))
+    assert risk.halted
+    assert len(out) == 2                     # first sized, second is halt
+    assert out[1].halt is True
+
+    # the halt event travels the mesh — ExecutionAgent flattens + marker
+    q_in2, q_out2 = asyncio.Queue(), asyncio.Queue()
+    ex = ExecutionAgent(q_in2, q_out2, broker, store)
+
+    async def go():
+        await q_in2.put(out[1])
+        await q_in2.put(None)
+        await asyncio.gather(asyncio.create_task(ex.run()),
+                             return_exceptions=True)
+        got = []
+        while not q_out2.empty():
+            item = await q_out2.get()
+            if item is not None:
+                got.append(item)
+        return got
+
+    got = asyncio.run(go())
+    # no open positions → only the KILL_SWITCH marker (evt, None)
+    assert got and got[0][1] is None
+    assert "KILL_SWITCH" in got[0][0].signal.reason
+
+
+def test_quorum_ignores_opposing_votes():
+    """Confident SELL votes must never approve a large BUY order."""
+    cfg = EngineConfig(consensus_threshold_usd=10.0, consensus_min_votes=3,
+                       consensus_min_score=0.5, rolling_win_rate=0.9,
+                       rolling_payout_ratio=2.0, max_trade_fraction=0.9)
+    store = ConfigStore()
+    store.swap(**cfg.to_dict())
+    risk, _qin, q_out = _risk(store)
+    e = _evt(votes=[{"agent": a, "side": "SELL", "confidence": 0.99}
+                    for a in ("x", "y", "z")])
+    out = asyncio.run(_drive(risk, [e], q_out))
+    assert risk.vetoes["consensus"] == 1
+    assert out == []
+
+
+def test_broker_breaker_flattens_on_loss_tick():
+    """A realized loss past the drawdown limit flattens remaining positions
+    on the same tick — no signal required (Devin Review BUG_0004)."""
+    broker = PaperBroker()
+    eq = {"v": 1000.0}
+    broker.equity_ref = lambda: eq["v"]
+    broker.max_drawdown_limit = 0.04
+    orig = broker._record
+    broker._record = lambda f: (orig(f), eq.update(v=eq["v"] + f.pnl))[0]
+
+    async def go():
+        # two positions
+        from runtime.tradegate.broker import Order
+        for sym in ("AAA", "BBB"):
+            o = Order(symbol=sym, side=Side.BUY,
+                      strategy=Strategy.ALPHA_MOMENTUM, capital=1000,
+                      stop_price=90, take_profit=110,
+                      placed_ts=1.0, expires_ts=999.0)
+            await broker.submit(o, 100.0)
+        # AAA stops out with a 60% loss → dd > 4% → BBB flattened too
+        t = Tick(symbol="AAA", timestamp=time.time(), price=40.0,
+                 bid=39.9, ask=40.1, bids_depth=1e5, asks_depth=1e5,
+                 volume_delta=1, high=40.5, low=39.0)
+        return await broker.on_tick(t)
+
+    fills = asyncio.run(go())
+    kinds = {f.symbol: f.kind for f in fills}
+    assert kinds.get("AAA") == "EXIT_STOP"
+    assert kinds.get("BBB") == "EXIT_KILL"
+    assert not broker.positions
 
 
 def test_exec_latency_degrade():

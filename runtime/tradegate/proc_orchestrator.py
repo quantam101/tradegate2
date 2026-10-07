@@ -69,7 +69,8 @@ class _StaticStore:
         return self._cfg
 
 
-def _child(agent_factory, name_map: dict, queues: dict, cfg_dict: dict) -> None:
+def _child(agent_factory, name_map: dict, queues: dict, cfg_dict: dict,
+           shared: dict) -> None:
     """Child process entry: build the agent over async-adapted mp queues
     and run it until its sentinel arrives."""
     def q(local_name):
@@ -77,48 +78,61 @@ def _child(agent_factory, name_map: dict, queues: dict, cfg_dict: dict) -> None:
         return _AsyncMPQueue(queues[real]) if real else None
 
     store = _StaticStore(cfg_dict)
-    agent = agent_factory(q, store)
+    agent = agent_factory(q, store, shared)
     asyncio.run(agent.run())
 
 
-def _f_depth(q, store):
+INITIAL_EQUITY = 1000.0
+
+
+def _f_depth(q, store, _s):
     from .agents import DepthCvdAgent
     return DepthCvdAgent(q("in"), q("out"), store)
 
 
-def _f_sentiment(q, store):
+def _f_sentiment(q, store, _s):
     from .agents import SentimentAgent
     return SentimentAgent(q("in"), q("out"))
 
 
-def _f_regime(q, store):
+def _f_regime(q, store, _s):
     from .agents import RegimeAgent
     return RegimeAgent(q("in"), q("alpha"), q("beta"), q("drop"), store)
 
 
-def _f_alpha(q, store):
+def _f_alpha(q, store, _s):
     from .agents import AlphaStrategyAgent
     return AlphaStrategyAgent(q("in"), q("out"))
 
 
-def _f_beta(q, store):
+def _f_beta(q, store, _s):
     from .agents import BetaStrategyAgent
     return BetaStrategyAgent(q("in"), q("out"))
 
 
-def _f_risk(q, store):
+def _f_risk(q, store, shared):
     from .agents import RiskAgent
-    return RiskAgent(q("in"), q("out"), store, equity_ref=lambda: 1000.0)
+    # realized equity shared from the exec process — the drawdown breaker
+    # trips on real losses, not a constant
+    return RiskAgent(q("in"), q("out"), store,
+                     equity_ref=lambda: shared["equity"].value)
 
 
-def _f_exec(q, store):
+def _f_exec(q, store, shared):
     from .agents import ExecutionAgent
     from .broker import PaperBroker
     broker = PaperBroker(ledger_path=Path("data/tradegate/proc_fills.jsonl"))
-    return ExecutionAgent(q("in"), q("out"), broker, store)
+    broker.equity_ref = lambda: shared["equity"].value
+    broker.max_drawdown_limit = store.snapshot().max_drawdown_limit
+
+    def _probe(pnl: float) -> None:
+        shared["equity"].value = INITIAL_EQUITY + pnl
+
+    return ExecutionAgent(q("in"), q("out"), broker, store,
+                          drive_exits=True, equity_probe=_probe)
 
 
-def _f_telemetry(q, store):
+def _f_telemetry(q, store, _s):
     from .agents import TelemetryAgent
     return TelemetryAgent(q("in"))
 
@@ -172,11 +186,12 @@ async def run_procs(symbol: str = "PAPER/USD", steps: int = 5000,
     out_names["beta"]["out"] = "signals"
     out_names["risk"]["in"] = "signals"
 
+    shared = {"equity": ctx.Value("d", INITIAL_EQUITY)}
     procs = []
     for name, factory in _STAGES.items():
         p = ctx.Process(
             target=_child, name=f"tg-{name}",
-            args=(factory, out_names[name], queues, cfg_dict),
+            args=(factory, out_names[name], queues, cfg_dict, shared),
             daemon=True)
         p.start()
         procs.append(p)

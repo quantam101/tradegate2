@@ -114,6 +114,7 @@ class PaperBroker:
 
     async def on_tick(self, tick: Tick) -> list[Fill]:
         out: list[Fill] = []
+        self._breaker_hit()  # seed/update the equity peak before any exits
         pos = self.positions.get(tick.symbol)
         if not pos:
             return out
@@ -129,7 +130,30 @@ class PaperBroker:
                 exit_fill = self._exit(pos, pos.take_profit, tick.timestamp, "EXIT_TP")
         if exit_fill:
             out.append(exit_fill)
+            # Realized-equity breaker: a loss this tick can breach the
+            # drawdown limit with no new signal arriving — flatten
+            # remaining positions immediately rather than waiting for
+            # RiskAgent to see another signal.
+            if self._breaker_hit():
+                for p in list(self.positions.values()):
+                    out.append(self._exit(p, tick.price, tick.timestamp,
+                                          "EXIT_KILL"))
         return out
+
+    def _breaker_hit(self) -> bool:
+        """Owner-wired drawdown check on realized equity."""
+        if not self.equity_ref or not self.max_drawdown_limit:
+            return False
+        eq = self.equity_ref()
+        self._breaker_peak = max(self._breaker_peak or eq, eq)
+        return self._breaker_peak > 0 and \
+            1 - eq / self._breaker_peak >= self.max_drawdown_limit
+
+    # equity_ref / max_drawdown_limit / _breaker_peak are set by the owner
+    # (orchestrator / backtest / proc child) — None / 0 disables the check.
+    equity_ref = None
+    max_drawdown_limit = 0.0
+    _breaker_peak = None
 
     def cancel_all(self) -> int:
         """Kill-switch: drop every resting (unfilled) order. Returns count."""
