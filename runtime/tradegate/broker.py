@@ -9,11 +9,10 @@ market never revisits is dropped), and keeps an append-only fill ledger.
 from __future__ import annotations
 
 import json
-import time
 import uuid
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Protocol
+from typing import Protocol
 
 from .events import Side, Strategy, Tick
 
@@ -63,9 +62,9 @@ class Fill:
 
 
 class Broker(Protocol):
-    async def submit(self, order: Order, ref_price: float) -> Optional[Fill]: ...
-    async def on_tick(self, tick: Tick) -> List[Fill]: ...
-    async def close_all(self, ref_price: float, ts: float) -> List[Fill]: ...
+    async def submit(self, order: Order, ref_price: float) -> Fill | None: ...
+    async def on_tick(self, tick: Tick) -> list[Fill]: ...
+    async def close_all(self, ref_price: float, ts: float) -> list[Fill]: ...
 
 
 class PaperBroker:
@@ -79,10 +78,10 @@ class PaperBroker:
     at close. Trailing stop ratchets with new highs.
     """
 
-    def __init__(self, ledger_path: Optional[Path] = None, fee_bps: float = 1.0):
-        self.positions: Dict[str, Position] = {}
-        self.resting: Dict[str, Order] = {}
-        self.fills: List[Fill] = []
+    def __init__(self, ledger_path: Path | None = None, fee_bps: float = 1.0):
+        self.positions: dict[str, Position] = {}
+        self.resting: dict[str, Order] = {}
+        self.fills: list[Fill] = []
         self.fee_bps = fee_bps
         self.ledger_path = Path(ledger_path) if ledger_path else None
         if self.ledger_path:
@@ -94,7 +93,7 @@ class PaperBroker:
             with self.ledger_path.open("a") as f:
                 f.write(json.dumps(asdict(fill), default=str) + "\n")
 
-    async def submit(self, order: Order, ref_price: float) -> Optional[Fill]:
+    async def submit(self, order: Order, ref_price: float) -> Fill | None:
         if order.symbol in self.positions:
             return None  # one position per symbol
         qty = order.capital / ref_price
@@ -113,12 +112,12 @@ class PaperBroker:
         self._record(fill)
         return fill
 
-    async def on_tick(self, tick: Tick) -> List[Fill]:
-        out: List[Fill] = []
+    async def on_tick(self, tick: Tick) -> list[Fill]:
+        out: list[Fill] = []
         pos = self.positions.get(tick.symbol)
         if not pos:
             return out
-        exit_fill: Optional[Fill] = None
+        exit_fill: Fill | None = None
         if pos.side == Side.BUY:
             pos.peak_price = max(pos.peak_price, tick.high)
             # ratchet trailing stop with price advances
@@ -132,6 +131,12 @@ class PaperBroker:
             out.append(exit_fill)
         return out
 
+    def cancel_all(self) -> int:
+        """Kill-switch: drop every resting (unfilled) order. Returns count."""
+        n = len(self.resting)
+        self.resting.clear()
+        return n
+
     def _exit(self, pos: Position, price: float, ts: float, kind: str) -> Fill:
         gross = (price - pos.entry_price) * pos.qty
         fee = price * pos.qty * self.fee_bps / 1e4
@@ -141,7 +146,7 @@ class PaperBroker:
         self._record(fill)
         return fill
 
-    async def close_all(self, ref_price: float, ts: float) -> List[Fill]:
+    async def close_all(self, ref_price: float, ts: float) -> list[Fill]:
         out = []
         for pos in list(self.positions.values()):
             out.append(self._exit(pos, ref_price, ts, "EXIT_EOD"))

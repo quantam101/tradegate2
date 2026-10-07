@@ -11,15 +11,15 @@ trading is intentionally absent: ``Broker`` is an interface, and the only
 implementation shipped here is ``PaperBroker``.
 """
 
-from .config import EngineConfig, ConfigStore
-from .events import Tick, MarketEvent, Signal
+from .config import ConfigStore, EngineConfig
+from .events import MarketEvent, Signal, Tick
 from .orchestrator import TradeGateOrchestrator
 
 __all__ = [
-    "EngineConfig",
     "ConfigStore",
-    "Tick",
+    "EngineConfig",
     "MarketEvent",
     "Signal",
+    "Tick",
     "TradeGateOrchestrator",
 ]

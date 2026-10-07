@@ -13,8 +13,9 @@ declares `requires_approval_for: external_write, paid_call, production_change`).
 ## Agent pipeline
 
 ```
-feed → A1 ingest → A2 depth/CVD → A3 regime → A4 alpha / A5 beta
-     → A6 risk (fractional Kelly + drawdown breaker)
+feed → A1 ingest → A2 depth/CVD → A2.5 sentiment → A3 regime
+     → A4 alpha / A5 beta
+     → A6 risk (fractional Kelly + drawdown breaker + veto guards)
      → A7 execution (PaperBroker) → A8 telemetry → A9 WFO optimizer
 ```
 
@@ -32,6 +33,38 @@ feed → A1 ingest → A2 depth/CVD → A3 regime → A4 alpha / A5 beta
   over real out-of-sample backtest windows and hot-swaps config
   atomically through `ConfigStore.swap()` — versioned, immutable
   snapshots; no shared mutable state.
+
+## Governance layer (Risk-Gatekeeper spec)
+
+A6 carries unilateral veto power — no order reaches A7 without passing
+every check below. Each veto is counted in `risk.vetoes` for the audit
+trail.
+
+| Guard | Config field | Behavior |
+|-------|--------------|----------|
+| Fat-finger notional cap | `max_notional_usd` (default $20M) | Sized capital is clamped at the cap — a fat-finger can never submit above it |
+| Slippage vs mid | `max_slippage_bps` (default 40bps) | Veto if ref price deviates from bid/ask mid beyond the cap |
+| Consensus quorum | `consensus_threshold_usd`, `consensus_min_votes`, `consensus_min_score` (default $2M / 3 votes / 0.82) | Orders above the threshold need ≥N agent votes each ≥ the confidence score; sentiment, regime, alpha/beta agents each cast votes |
+| Latency degrade | `latency_degrade_ms` (default 15s) | A7 refuses new entries on stale events — our venue is market orders, so "degrade to passive" means refuse rather than chase |
+| Kill-switch | `max_drawdown_limit` | On first breaker trip A6 calls `on_halt` → `broker.cancel_all()` + `broker.close_all()` and emits a `KILL_SWITCH` telemetry event |
+| Sentiment veto | `data/tradegate/sentiment.json` | A2.5 stamps `evt.sentiment` (lexicon or free-LLM score in [-1,1]); A6 vetoes BUYs when sentiment ≤ -0.5 |
+
+## Sentiment feed
+
+`python3 -m runtime.tradegate sentiment "headline one" ...` or
+`--file headlines.txt [--out path]` writes the score file. It tries
+`GROQ_API_KEY` / `OPENROUTER_API_KEY` free models first, falls back to
+a weighted finance lexicon. A missing/corrupt/stale (>48h) file reads
+as neutral 0.0 — sentiment can help but never break the mesh.
+
+## Process-per-agent mode
+
+`python3 -m runtime.tradegate procpaper [--steps N] [--symbol S]` runs
+the same pipeline with every stage in its own OS process
+(`multiprocessing`, spawn context, `mp.Queue` links). Choose it for
+isolation — one agent crashing or blocking can't stall the ring — not
+latency (cross-process pickling costs more than asyncio queues save).
+No optimizer in this mode; config is fixed at spawn.
 
 ## Usage
 
