@@ -187,3 +187,24 @@ def test_cvd_is_per_symbol_not_inherited():
     a_evt, b_evt = outs[1], outs[2]
     assert a_evt.cvd == 100.0
     assert b_evt.cvd == -10.0, "B must start its own CVD, not inherit A's"
+
+
+def test_alpaca_trade_to_tick_honest_conversion():
+    """IEX trades carry no depth — feed must not fabricate it, and
+    volume sign must be per-symbol tick-rule."""
+    from runtime.tradegate.alpaca_feed import trade_to_tick
+
+    lp = {}
+    t1 = trade_to_tick({"T": "t", "S": "SPY", "p": 500.0, "s": 10,
+                        "t": "2026-10-07T14:00:00Z"}, lp)
+    t2 = trade_to_tick({"T": "t", "S": "SPY", "p": 501.0, "s": 20,
+                        "t": "2026-10-07T14:00:01Z"}, lp)
+    t3 = trade_to_tick({"T": "t", "S": "QQQ", "p": 400.0, "s": 5,
+                        "t": "2026-10-07T14:00:02Z"}, lp)
+    t4 = trade_to_tick({"T": "t", "S": "SPY", "p": 499.0, "s": 30,
+                        "t": "2026-10-07T14:00:03Z"}, lp)
+    assert t1.volume_delta == 0.0
+    assert t2.volume_delta == 20.0
+    assert t4.volume_delta == -30.0
+    assert t3.symbol == "QQQ" and t3.volume_delta == 0.0
+    assert t2.bids_depth == 1.0 and t2.asks_depth == 1.0
