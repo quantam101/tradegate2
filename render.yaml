@@ -1,0 +1,36 @@
+# Render blueprint — 24/7 TradeGate live-paper worker.
+#
+# IMPORTANT (zero-spend note): Render's free tier only covers web services
+# that may sleep — a background worker that must stay up 24/7 requires a
+# paid plan (starter ≈ $7/mo at time of writing). If you don't want to
+# spend, keep using the GitHub Actions weekday cron instead; this file is
+# the production path for when 24/7 coverage matters.
+#
+# Deploy: Render dashboard → New → Blueprint → point at this repo.
+
+services:
+  - type: worker
+    name: tradegate-livepaper
+    runtime: python
+    plan: starter
+    buildCommand: pip install "websockets>=16,<17"
+    startCommand: >-
+      python -m runtime.tradegate livepaper
+      --symbols SPY,QQQ,AAPL,MSFT,NVDA --capital 1000
+    autoDeploy: true
+    branch: main
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      # Set these in the Render dashboard — never commit real values.
+      - key: ALPACA_PAPER_KEY
+        sync: false
+      - key: ALPACA_PAPER_SECRET
+        sync: false
+      - key: TRADEGATE_DISCORD_WEBHOOK
+        sync: false
+        required: false
+    disk:
+      name: tradegate-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1

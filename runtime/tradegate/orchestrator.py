@@ -27,7 +27,7 @@ from .agents import (
     SentimentAgent,
     TelemetryAgent,
 )
-from .broker import PaperBroker
+from .broker import Broker, PaperBroker
 from .config import ConfigStore
 from .feed import MarketDataSource
 
@@ -43,11 +43,12 @@ class TradeGateOrchestrator:
                  telegram_token: str | None = None,
                  telegram_chat: str | None = None,
                  optimizer_interval: float = 3600.0,
-                 optimizer_objective=None):
+                 optimizer_objective=None,
+                 broker: Broker | None = None):
         self.store = store or ConfigStore()
         self.initial_capital = initial_capital
         self.equity = initial_capital
-        self.broker = PaperBroker(ledger_path=ledger_path)
+        self.broker = broker or PaperBroker(ledger_path=ledger_path)
         # Realized-equity breaker: flatten fires the tick a loss breaches
         # the limit, even with no new signal in flight.
         self.broker.equity_ref = lambda: self.equity

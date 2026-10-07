@@ -83,6 +83,30 @@ def main(argv=None):
         sym = argv[argv.index("--symbol") + 1] if "--symbol" in argv else "PAPER/USD"
         print(json.dumps(asyncio.run(run_procs(symbol=sym, steps=steps)), indent=2))
 
+    elif mode == "livepaper":
+        # 24/7 live paper trading: real Alpaca IEX trade stream → mesh →
+        # AlpacaPaperBroker (server-side bracket exits). Requires
+        # ALPACA_PAPER_KEY/SECRET; runs indefinitely until stopped.
+        import os
+
+        from .alpaca_broker import AlpacaPaperBroker
+        from .alpaca_feed import AlpacaTradeFeed
+        from .orchestrator import TradeGateOrchestrator, _TapFeed
+        syms = (argv[argv.index("--symbols") + 1].split(",")
+                if "--symbols" in argv else ["SPY", "QQQ", "AAPL", "MSFT", "NVDA"])
+        cap = (float(argv[argv.index("--capital") + 1])
+               if "--capital" in argv else 1000.0)
+        orch = TradeGateOrchestrator(
+            initial_capital=cap,
+            ledger_path=Path("data/tradegate/fills.jsonl"),
+            audit_path=Path("data/tradegate/audit.jsonl"),
+            discord_url=os.environ.get("TRADEGATE_DISCORD_WEBHOOK"),
+            telegram_token=os.environ.get("TRADEGATE_TELEGRAM_TOKEN"),
+            telegram_chat=os.environ.get("TRADEGATE_TELEGRAM_CHAT"),
+            broker=AlpacaPaperBroker())
+        feed = _TapFeed(AlpacaTradeFeed(syms), orch.broker, orch.stages)
+        asyncio.run(orch.run(feed))
+
     elif mode == "sentiment":
         from .sentiment import main as sentiment_main
         sentiment_main(argv[1:])
