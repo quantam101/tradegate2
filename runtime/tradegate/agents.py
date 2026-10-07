@@ -45,7 +45,7 @@ class DepthCvdAgent:
 
     def __init__(self, q_in, q_out, store: ConfigStore, window: int = 50):
         self.q_in, self.q_out, self.store = q_in, q_out, store
-        self.cvd = 0.0
+        self.cvd: dict[str, float] = {}
         self.deltas = deque(maxlen=window)
 
     async def run(self) -> None:
@@ -56,7 +56,7 @@ class DepthCvdAgent:
                     await self.q_out.put(None)
                     return
                 t = evt.tick
-                evt.cvd = self.cvd = self.cvd + t.volume_delta
+                evt.cvd = self.cvd[t.symbol] = self.cvd.get(t.symbol, 0.0) + t.volume_delta
                 evt.imbalance = t.bids_depth / t.asks_depth if t.asks_depth > 0 else 1.0
                 evt.config_version = self.store.snapshot().version
                 await self.q_out.put(evt)

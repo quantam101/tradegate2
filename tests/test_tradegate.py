@@ -157,3 +157,33 @@ def test_beta_blocks_non_oversold():
     outs = asyncio.run(drive())
     sides = [o.signal.side for o in outs if o]
     assert sides[:2] == [Side.HOLD, Side.HOLD] and sides[2] == Side.BUY
+
+
+def test_cvd_is_per_symbol_not_inherited():
+    """Symbol B must not inherit symbol A's cumulative volume delta."""
+    from runtime.tradegate.agents import DepthCvdAgent
+    from runtime.tradegate.events import MarketEvent
+
+    q_in, q_out = asyncio.Queue(), asyncio.Queue()
+    agent = DepthCvdAgent(q_in, q_out, ConfigStore())
+
+    async def drive():
+        task = asyncio.create_task(agent.run())
+        ticks = [
+            Tick("A", 0.0, 100, 99.9, 100.1, 1, 1, 50.0),
+            Tick("A", 1.0, 100, 99.9, 100.1, 1, 1, 50.0),
+            Tick("B", 2.0, 100, 99.9, 100.1, 1, 1, -10.0),
+        ]
+        for t in ticks:
+            await q_in.put(MarketEvent(tick=t))
+        await q_in.put(None)
+        await task
+        outs = []
+        while not q_out.empty():
+            outs.append(await q_out.get())
+        return outs
+
+    outs = asyncio.run(drive())
+    a_evt, b_evt = outs[1], outs[2]
+    assert a_evt.cvd == 100.0
+    assert b_evt.cvd == -10.0, "B must start its own CVD, not inherit A's"
