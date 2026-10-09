@@ -51,7 +51,9 @@ jobs:
         run: |
           git config user.name "tradegate-paper[bot]"
           git config user.email "tradegate-paper[bot]@users.noreply.github.com"
-          git add -A data/tradegate/
+          for d in data/tradegate/daily data/tradegate/rotation; do
+            if [ -d "$d" ]; then git add "$d"; fi
+          done
           git diff --cached --quiet || git commit -m "chore(tradegate): daily paper ledger $(date -u +%F)"
           git push
 

@@ -41,6 +41,7 @@ def _bars(n, drift):
 
 
 CFG = RotationConfig(lookback=20, top_k=2, sma=10, vol_window=10, rebalance_every=5)
+TODAY = "2025-03-05"  # day after the last synthetic bar (60 bars → 2025-03-04)
 
 
 class FakeRebalancer:
@@ -62,7 +63,8 @@ def test_paper_run_logs_target_and_respects_capital_cap(tmp_path):
     data = {"UP": _bars(60, 0.01), "DOWN": _bars(60, -0.01)}
     rb = FakeRebalancer({})
     rec = run_rotation_paper(capital=1000, execute=True, universe=list(data), cfg=CFG,
-                             out_dir=tmp_path, bars_fn=lambda s: data[s], rebalancer=rb)
+                             out_dir=tmp_path, bars_fn=lambda s: data[s], rebalancer=rb,
+                             today=TODAY)
     assert rec["rebalance_day"] and rec["executed"]
     assert set(rec["target_weights"]) == {"UP"}
     assert rec["budget"] == 1000  # capped below the 5000 account equity
@@ -73,15 +75,60 @@ def test_paper_run_logs_target_and_respects_capital_cap(tmp_path):
 def test_paper_run_defers_when_holding_has_no_fresh_bar(tmp_path):
     data = {"UP": _bars(60, 0.01), "STALE": _bars(59, 0.01)}
     rb = FakeRebalancer({"STALE": 400.0})
+    (tmp_path / "state.json").write_text(json.dumps({"owned": ["STALE"]}))
     rec = run_rotation_paper(capital=1000, execute=True, universe=list(data), cfg=CFG,
-                             out_dir=tmp_path, bars_fn=lambda s: data[s], rebalancer=rb)
+                             out_dir=tmp_path, bars_fn=lambda s: data[s], rebalancer=rb,
+                             today=TODAY)
     assert rec["deferred_unpriced_holdings"] == ["STALE"]
     assert rb.sent == [] and not rec["executed"]
-    assert not (tmp_path / "state.json").exists()
+    assert "last_rebalance" not in json.loads((tmp_path / "state.json").read_text())
 
 
 def test_paper_run_without_execute_places_nothing(tmp_path):
     data = {"UP": _bars(60, 0.01)}
     rec = run_rotation_paper(capital=1000, execute=False, universe=list(data), cfg=CFG,
-                             out_dir=tmp_path, bars_fn=lambda s: data[s])
+                             out_dir=tmp_path, bars_fn=lambda s: data[s], today=TODAY)
     assert not rec["executed"] and "orders" not in rec
+
+
+def test_unowned_positions_are_never_sold(tmp_path):
+    data = {"UP": _bars(60, 0.01)}
+    rb = FakeRebalancer({"AAPL": 5000.0})  # another strategy's position
+    run_rotation_paper(capital=1000, execute=True, universe=list(data), cfg=CFG,
+                       out_dir=tmp_path, bars_fn=lambda s: data[s], rebalancer=rb,
+                       today=TODAY)
+    assert all(o.symbol != "AAPL" for o in rb.sent)
+    assert json.loads((tmp_path / "state.json").read_text())["owned"] == ["UP"]
+
+
+def test_stale_data_defers_without_orders(tmp_path):
+    data = {"UP": _bars(60, 0.01)}
+    rb = FakeRebalancer({})
+    rec = run_rotation_paper(capital=1000, execute=True, universe=list(data), cfg=CFG,
+                             out_dir=tmp_path, bars_fn=lambda s: data[s], rebalancer=rb,
+                             today="2025-03-20")
+    assert rec["deferred_stale_data"]["asof"] == data["UP"][-1]["date"]
+    assert not rec["rebalance_day"] and rb.sent == []
+
+
+def test_asof_uses_newest_series_not_longest(tmp_path):
+    data = {"LONG": _bars(60, 0.01)[:-2], "NEW": _bars(60, 0.005)[-30:]}
+    rec = run_rotation_paper(capital=1000, execute=False, universe=list(data), cfg=CFG,
+                             out_dir=tmp_path, bars_fn=lambda s: data[s], today=TODAY)
+    assert rec["asof"] == data["NEW"][-1]["date"]
+
+
+class RejectingRebalancer(FakeRebalancer):
+    def submit(self, o):
+        self.sent.append(o)
+        return None
+
+
+def test_rejected_order_retries_next_day(tmp_path):
+    data = {"UP": _bars(60, 0.01)}
+    rec = run_rotation_paper(capital=1000, execute=True, universe=list(data), cfg=CFG,
+                             out_dir=tmp_path, bars_fn=lambda s: data[s],
+                             rebalancer=RejectingRebalancer({}), today=TODAY)
+    assert rec["rejected_orders"] == ["UP"]
+    state = json.loads((tmp_path / "state.json").read_text())
+    assert "last_rebalance" not in state
