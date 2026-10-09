@@ -20,6 +20,15 @@ closes up to and including day *t*, and trades fill at day *t+1*'s open.
 Every traded dollar pays ``cost_bps``. An asset is only eligible once it
 has ``lookback`` bars of its own history.
 
+Missing bars are treated as *unknown*, never as a signal:
+* a target waits until every symbol it touches has an open, and no new
+  target replaces it while it waits;
+* a rebalance is deferred to the next day on which every held symbol has a
+  close, so a held asset is never dropped just because its bar is absent;
+* a held symbol may be marked at its last close for a short gap (holiday,
+  halt), but after ``max_stale_bars`` days without a price the run fails
+  loudly instead of reporting a stale valuation as current.
+
 Usage:
     python -m runtime.tradegate rotation --csv prices.csv --capital 1000 \
         --start 2026-04-09
@@ -49,6 +58,7 @@ class RotationConfig:
     inverse_vol: bool = True     # weight by 1/vol instead of equally
     vol_window: int = 63
     cost_bps: float = 5.0        # per traded dollar (commission+slippage)
+    max_stale_bars: int = 5      # held symbol unpriced this many days → error
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -158,6 +168,7 @@ def run_rotation(data: dict[str, list[dict]], cfg: RotationConfig | None = None,
         return data[sym][i][key] if i is not None else None
 
     last_close: dict[str, float] = {}
+    stale: dict[str, int] = {}
     for day in trading:
         # 1) execute yesterday's target at today's open
         if pending is not None:
@@ -203,11 +214,23 @@ def run_rotation(data: dict[str, list[dict]], cfg: RotationConfig | None = None,
             c = px(s, day, "close")
             if c is not None:
                 last_close[s] = c
+                stale.pop(s, None)
+        for s in units:
+            if px(s, day, "close") is None:
+                stale[s] = stale.get(s, 0) + 1
+                if stale[s] > cfg.max_stale_bars:
+                    raise ValueError(
+                        f"held symbol {s} has no price for {stale[s]} bars as of "
+                        f"{day} (discontinued or missing data); refusing to report "
+                        f"a stale valuation")
         value = cash + sum(u * last_close[s] for s, u in units.items())
         res.equity.append((day, value))
         # 3) decide tomorrow's target from closes through today
         since_rebal += 1
-        if since_rebal >= cfg.rebalance_every:
+        # Defer (don't skip) a rebalance while a target is still unfilled or
+        # a held symbol has no close today: absence of data is not a signal.
+        held_priced = all(day in idx[s] for s in units)
+        if since_rebal >= cfg.rebalance_every and pending is None and held_priced:
             hist = {s: data[s][:idx[s][day] + 1] for s in data if day in idx[s]}
             pending = _target_weights(hist, cfg)
             since_rebal = 0

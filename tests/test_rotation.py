@@ -82,3 +82,49 @@ def test_buy_and_hold_equal_weight():
     r = buy_and_hold(data, ["A", "B"], data["A"][0]["date"])
     a = data["A"][-1]["close"] / data["A"][0]["open"] - 1
     assert r == pytest.approx(a / 2)
+
+
+def _drop(bars, dates):
+    return [b for b in bars if b["date"] not in dates]
+
+
+def test_unfilled_target_waits_for_missing_open_and_is_not_replaced():
+    a = _series("A", 80, drift=0.004)
+    b = _series("B", 80, drift=0.002)
+    full = run_rotation({"A": a, "B": b}, CFG, 1000.0)
+    first_exec = next(d for d, w in full.holdings if w)
+    # B has no bar on the day the first target would fill
+    gap = run_rotation({"A": a, "B": _drop(b, {first_exec})}, CFG, 1000.0)
+    exec_gap = next(d for d, w in gap.holdings if w)
+    dates = [x["date"] for x in a]
+    assert dates.index(exec_gap) == dates.index(first_exec) + 1
+    assert next(w for d, w in gap.holdings if w) == next(w for d, w in full.holdings if w)
+
+
+def test_rebalance_deferred_when_held_symbol_has_no_close():
+    a = _series("A", 120, drift=0.004)
+    b = _series("B", 120, drift=0.003)
+    base = run_rotation({"A": a, "B": b}, CFG, 1000.0)
+    targets = [d for d, w in base.holdings if w]
+    # decision day for the 2nd target is the trading day before it executes
+    dates = [x["date"] for x in a]
+    decide = dates[dates.index(targets[1]) - 1]
+    res = run_rotation({"A": a, "B": _drop(b, {decide})}, CFG, 1000.0)
+    # B stays in every target: a missing bar never reads as failed momentum
+    live = [w for d, w in res.holdings if w]
+    assert live and all("B" in w for w in live)
+
+
+def test_discontinued_holding_fails_instead_of_stale_valuation():
+    a = _series("A", 100, drift=0.002)
+    b = _series("B", 100, drift=0.006)
+    with pytest.raises(ValueError, match="no price"):
+        run_rotation({"A": a, "B": b[:60]}, CFG, 1000.0)
+
+
+def test_short_gap_in_held_symbol_is_tolerated():
+    a = _series("A", 100, drift=0.002)
+    b = _series("B", 100, drift=0.006)
+    gap = {b[70]["date"], b[71]["date"]}
+    res = run_rotation({"A": a, "B": _drop(b, gap)}, CFG, 1000.0)
+    assert res.end_value > 0
