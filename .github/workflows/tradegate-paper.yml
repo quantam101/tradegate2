@@ -47,11 +47,19 @@ jobs:
         # target portfolio data-only. Budget capped at $1,000.
         run: python -m runtime.tradegate rotation-paper --capital 1000 --execute
 
+      - name: Dip-buying paper run
+        continue-on-error: true  # never block the daily ledger commit
+        env:
+          # Separate Alpaca paper account so it never mixes with rotation.
+          ALPACA_DIP_PAPER_KEY: ${{ secrets.ALPACA_DIP_PAPER_KEY }}
+          ALPACA_DIP_PAPER_SECRET: ${{ secrets.ALPACA_DIP_PAPER_SECRET }}
+        run: python -m runtime.tradegate dip-paper --capital 1000 --execute
+
       - name: Commit daily ledger
         run: |
           git config user.name "tradegate-paper[bot]"
           git config user.email "tradegate-paper[bot]@users.noreply.github.com"
-          for d in data/tradegate/daily data/tradegate/rotation; do
+          for d in data/tradegate/daily data/tradegate/rotation data/tradegate/dipbuy; do
             if [ -d "$d" ]; then git add "$d"; fi
           done
           git diff --cached --quiet || git commit -m "chore(tradegate): daily paper ledger $(date -u +%F)"
@@ -64,4 +72,5 @@ jobs:
           path: |
             data/tradegate/daily/
             data/tradegate/rotation/
+            data/tradegate/dipbuy/
           retention-days: 90
