@@ -10,8 +10,22 @@ open → append a record to ``data/tradegate/dipbuy/YYYY-MM-DD.json``.
 
 Safety: paper endpoint only (enforced by ``AlpacaRebalancer``); only
 positions this strategy opened (``state.json`` → ``owned``) are ever sold;
-no orders when the newest bar is more than ``max_data_age_days`` old; a
-rejected order simply re-signals on the next run.
+no orders when the newest bar is more than ``max_data_age_days`` old.
+
+An accepted order is not a fill — after-close orders wait for the next open
+and can still be cancelled. So every order id is kept in ``state.open``
+and reconciled against Alpaca at the start of each run:
+
+* while an order is open, its symbol gets no new signal (no duplicate buys
+  across a holiday, no repeated exits);
+* a filled sell credits its proceeds to that symbol's slot; a cancelled,
+  expired or rejected sell keeps the position owned so the exit retries;
+* a filled buy keeps ownership; a cancelled buy releases it with the slot
+  untouched.
+
+Each symbol buys with its **own slot balance** (``state.slots``), starting
+at capital / len(universe) and updated from real fill proceeds — the same
+per-slot reinvestment the backtest uses.
 """
 
 from __future__ import annotations
@@ -56,30 +70,45 @@ def run_dip_paper(capital: float = 1000.0, execute: bool = False,
         record["deferred_stale_data"] = {"asof": asof, "age_days": age}
     else:
         rb = None
+        slots = {s: float(v) for s, v in state.get("slots", {}).items()}
+        for s in cfg.universe:
+            slots.setdefault(s, capital / len(cfg.universe))
+        open_orders: dict[str, dict] = dict(state.get("open", {}))
         held = set(owned)
         if execute:
             rb = rebalancer or AlpacaRebalancer()
-            held = {s for s in rb.positions() if s in owned}
+            record["reconciled"] = _reconcile(rb, owned, slots, open_orders)
+            positions = rb.positions()
+            held = {s for s in owned if s in positions}
+            # owned but gone with nothing pending: closed outside this runner
+            for s in sorted(owned - set(positions) - set(open_orders)):
+                owned.discard(s)
         for s, bars in hist.items():
-            if not bars or bars[-1]["date"] != asof:
-                continue  # stale symbol: no signal today
+            if not bars or bars[-1]["date"] != asof or s in open_orders:
+                continue  # stale symbol, or an order for it is still working
             sig = signal([b["close"] for b in bars], s in held, cfg)
             if sig:
                 record["signals"][s] = sig
         if execute and record["signals"]:
-            budget = min(capital, rb.equity())
-            slot = budget / len(cfg.universe)
             record["orders"] = []
             for s, sig in sorted(record["signals"].items(), key=lambda kv: kv[1] != "sell"):
                 order = (PlannedOrder(s, "sell", 0.0, close_all=True) if sig == "sell"
-                         else PlannedOrder(s, "buy", slot))
-                ok = rb.submit(order) is not None
+                         else PlannedOrder(s, "buy", round(slots[s], 2)))
+                if order.side == "buy" and order.notional < 1.0:
+                    record["orders"].append({**order.__dict__, "accepted": False,
+                                             "reason": "slot below $1"})
+                    continue
+                resp = rb.submit(order)
+                ok = bool(resp) and "id" in resp
                 record["orders"].append({**order.__dict__, "accepted": ok})
                 if ok:
-                    (owned.discard if sig == "sell" else owned.add)(s)
+                    open_orders[s] = {"id": str(resp["id"]), "side": order.side}
+                    if sig == "buy":
+                        owned.add(s)  # released again if the buy is cancelled
             record["executed"] = True
-            record["budget"] = budget
         state["owned"] = sorted(owned)
+        state["slots"] = {s: round(v, 6) for s, v in slots.items()}
+        state["open"] = open_orders
         state["last_run"] = asof
         state_path.write_text(json.dumps(state, indent=2))
     day = time.strftime("%Y-%m-%d")
@@ -90,6 +119,36 @@ def run_dip_paper(capital: float = 1000.0, execute: bool = False,
     print(json.dumps({"asof": asof, "signals": record["signals"],
                       "executed": record["executed"]}, indent=2))
     return record
+
+
+_TERMINAL = {"filled", "canceled", "cancelled", "expired", "rejected",
+             "done_for_day", "replaced"}
+
+
+def _reconcile(rb, owned: set, slots: dict, open_orders: dict) -> list[dict]:
+    """Settle tracked orders that reached a final state. Mutates owned,
+    slots and open_orders; returns a log of what changed."""
+    log = []
+    for sym, o in list(open_orders.items()):
+        info = rb.order(o["id"])
+        if info is None:
+            continue  # unknown right now — keep tracking, check next run
+        status = str(info.get("status", "")).lower()
+        if status not in _TERMINAL:
+            continue
+        filled_qty = float(info.get("filled_qty") or 0)
+        px = float(info.get("filled_avg_price") or 0)
+        if o["side"] == "sell":
+            if filled_qty > 0:
+                slots[sym] = filled_qty * px
+                owned.discard(sym)
+            # not filled → position still ours; exit re-signals next run
+        elif filled_qty <= 0:
+            owned.discard(sym)  # buy never filled: release, slot unchanged
+        log.append({"symbol": sym, "side": o["side"], "status": status,
+                    "filled_qty": filled_qty, "price": px})
+        del open_orders[sym]
+    return log
 
 
 def main(argv: list[str]) -> None:
