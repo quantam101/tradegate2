@@ -132,3 +132,22 @@ def test_rejected_order_retries_next_day(tmp_path):
     assert rec["rejected_orders"] == ["UP"]
     state = json.loads((tmp_path / "state.json").read_text())
     assert "last_rebalance" not in state
+
+
+def test_accepted_exit_keeps_ownership_until_position_is_gone(tmp_path):
+    data = {"UP": _bars(60, 0.01), "DOWN": _bars(60, -0.01)}
+    (tmp_path / "state.json").write_text(json.dumps({"owned": ["DOWN"]}))
+    rb = FakeRebalancer({"DOWN": 400.0})  # DOWN fails momentum → close it
+    run_rotation_paper(capital=1000, execute=True, universe=list(data), cfg=CFG,
+                       out_dir=tmp_path, bars_fn=lambda s: data[s], rebalancer=rb,
+                       today=TODAY)
+    assert any(o.symbol == "DOWN" and o.close_all for o in rb.sent)
+    assert "DOWN" in json.loads((tmp_path / "state.json").read_text())["owned"]
+    # next run: the sell filled, DOWN no longer in positions → pruned
+    rb2 = FakeRebalancer({"UP": 600.0})
+    (tmp_path / "state.json").write_text(json.dumps(
+        {"owned": ["DOWN", "UP"], "last_rebalance": None}))
+    run_rotation_paper(capital=1000, execute=True, universe=list(data), cfg=CFG,
+                       out_dir=tmp_path, bars_fn=lambda s: data[s], rebalancer=rb2,
+                       today=TODAY)
+    assert json.loads((tmp_path / "state.json").read_text())["owned"] == ["UP"]
