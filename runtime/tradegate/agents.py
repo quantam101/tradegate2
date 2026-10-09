@@ -411,8 +411,9 @@ class ExecutionAgent:
                 # emit a KILL_SWITCH marker for telemetry.
                 if evt.halt:
                     cancelled = self.broker.cancel_all()
-                    fills = await self.broker.close_all(evt.tick.price,
-                                                      evt.tick.timestamp)
+                    fills = await self.broker.close_all(
+                        evt.tick.price, evt.tick.timestamp,
+                        ref_symbol=evt.tick.symbol)
                     evt.signal.reason += (f" | KILL_SWITCH flattened={len(fills)}"
                                           f" cancelled={cancelled}")
                     for f in fills:

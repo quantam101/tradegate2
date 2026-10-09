@@ -144,7 +144,8 @@ class AlpacaPaperBroker(Broker):
         out.append(fill)
         return out
 
-    async def close_all(self, ref_price: float, ts: float) -> list[Fill]:
+    async def close_all(self, ref_price: float, ts: float,
+                        ref_symbol: str | None = None) -> list[Fill]:
         out = []
         for sym in list(self.positions):
             pos = self.positions[sym]
