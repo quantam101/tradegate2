@@ -1,0 +1,153 @@
+import json
+
+import pytest
+
+from runtime.tradegate.rotation import RotationConfig
+from runtime.tradegate.rotation_paper import (
+    is_rebalance_day,
+    plan_rebalance,
+    run_rotation_paper,
+)
+
+
+def test_plan_sells_first_and_closes_dropped_positions():
+    orders = plan_rebalance(1000, {"OLD": 300.0, "KEEP": 200.0},
+                            {"KEEP": 0.5, "NEW": 0.5})
+    assert orders[0].side == "sell" and orders[0].symbol == "OLD"
+    assert orders[0].close_all
+    by = {o.symbol: o for o in orders}
+    assert by["KEEP"].side == "buy" and by["KEEP"].notional == pytest.approx(300)
+    assert by["NEW"].notional == pytest.approx(500)
+
+
+def test_plan_skips_small_drift():
+    assert plan_rebalance(1000, {"A": 495.0}, {"A": 0.5}) == []
+
+
+def test_rebalance_cadence():
+    dates = [f"2026-01-{d:02d}" for d in range(1, 31)]
+    assert is_rebalance_day(dates, None, 21)
+    assert not is_rebalance_day(dates, "2026-01-20", 21)
+    assert is_rebalance_day(dates, "2026-01-05", 21)
+
+
+def _bars(n, drift):
+    px, out = 100.0, []
+    for i in range(n):
+        px *= 1 + drift
+        out.append({"date": f"2025-{1 + i // 28:02d}-{1 + i % 28:02d}",
+                    "open": px, "high": px, "low": px, "close": px})
+    return out
+
+
+CFG = RotationConfig(lookback=20, top_k=2, sma=10, vol_window=10, rebalance_every=5)
+TODAY = "2025-03-05"  # day after the last synthetic bar (60 bars → 2025-03-04)
+
+
+class FakeRebalancer:
+    def __init__(self, positions):
+        self._pos, self.sent = positions, []
+
+    def equity(self):
+        return 5000.0
+
+    def positions(self):
+        return dict(self._pos)
+
+    def submit(self, o):
+        self.sent.append(o)
+        return {"id": "x"}
+
+
+def test_paper_run_logs_target_and_respects_capital_cap(tmp_path):
+    data = {"UP": _bars(60, 0.01), "DOWN": _bars(60, -0.01)}
+    rb = FakeRebalancer({})
+    rec = run_rotation_paper(capital=1000, execute=True, universe=list(data), cfg=CFG,
+                             out_dir=tmp_path, bars_fn=lambda s: data[s], rebalancer=rb,
+                             today=TODAY)
+    assert rec["rebalance_day"] and rec["executed"]
+    assert set(rec["target_weights"]) == {"UP"}
+    assert rec["budget"] == 1000  # capped below the 5000 account equity
+    assert sum(o.notional for o in rb.sent) == pytest.approx(1000)
+    assert json.loads((tmp_path / "state.json").read_text())["last_rebalance"]
+
+
+def test_paper_run_defers_when_holding_has_no_fresh_bar(tmp_path):
+    data = {"UP": _bars(60, 0.01), "STALE": _bars(59, 0.01)}
+    rb = FakeRebalancer({"STALE": 400.0})
+    (tmp_path / "state.json").write_text(json.dumps({"owned": ["STALE"]}))
+    rec = run_rotation_paper(capital=1000, execute=True, universe=list(data), cfg=CFG,
+                             out_dir=tmp_path, bars_fn=lambda s: data[s], rebalancer=rb,
+                             today=TODAY)
+    assert rec["deferred_unpriced_holdings"] == ["STALE"]
+    assert rb.sent == [] and not rec["executed"]
+    assert "last_rebalance" not in json.loads((tmp_path / "state.json").read_text())
+
+
+def test_paper_run_without_execute_places_nothing(tmp_path):
+    data = {"UP": _bars(60, 0.01)}
+    rec = run_rotation_paper(capital=1000, execute=False, universe=list(data), cfg=CFG,
+                             out_dir=tmp_path, bars_fn=lambda s: data[s], today=TODAY)
+    assert not rec["executed"] and "orders" not in rec
+
+
+def test_unowned_positions_are_never_sold(tmp_path):
+    data = {"UP": _bars(60, 0.01)}
+    rb = FakeRebalancer({"AAPL": 5000.0})  # another strategy's position
+    run_rotation_paper(capital=1000, execute=True, universe=list(data), cfg=CFG,
+                       out_dir=tmp_path, bars_fn=lambda s: data[s], rebalancer=rb,
+                       today=TODAY)
+    assert all(o.symbol != "AAPL" for o in rb.sent)
+    assert json.loads((tmp_path / "state.json").read_text())["owned"] == ["UP"]
+
+
+def test_stale_data_defers_without_orders(tmp_path):
+    data = {"UP": _bars(60, 0.01)}
+    rb = FakeRebalancer({})
+    rec = run_rotation_paper(capital=1000, execute=True, universe=list(data), cfg=CFG,
+                             out_dir=tmp_path, bars_fn=lambda s: data[s], rebalancer=rb,
+                             today="2025-03-20")
+    assert rec["deferred_stale_data"]["asof"] == data["UP"][-1]["date"]
+    assert not rec["rebalance_day"] and rb.sent == []
+
+
+def test_asof_uses_newest_series_not_longest(tmp_path):
+    data = {"LONG": _bars(60, 0.01)[:-2], "NEW": _bars(60, 0.005)[-30:]}
+    rec = run_rotation_paper(capital=1000, execute=False, universe=list(data), cfg=CFG,
+                             out_dir=tmp_path, bars_fn=lambda s: data[s], today=TODAY)
+    assert rec["asof"] == data["NEW"][-1]["date"]
+
+
+class RejectingRebalancer(FakeRebalancer):
+    def submit(self, o):
+        self.sent.append(o)
+        return None
+
+
+def test_rejected_order_retries_next_day(tmp_path):
+    data = {"UP": _bars(60, 0.01)}
+    rec = run_rotation_paper(capital=1000, execute=True, universe=list(data), cfg=CFG,
+                             out_dir=tmp_path, bars_fn=lambda s: data[s],
+                             rebalancer=RejectingRebalancer({}), today=TODAY)
+    assert rec["rejected_orders"] == ["UP"]
+    state = json.loads((tmp_path / "state.json").read_text())
+    assert "last_rebalance" not in state
+
+
+def test_accepted_exit_keeps_ownership_until_position_is_gone(tmp_path):
+    data = {"UP": _bars(60, 0.01), "DOWN": _bars(60, -0.01)}
+    (tmp_path / "state.json").write_text(json.dumps({"owned": ["DOWN"]}))
+    rb = FakeRebalancer({"DOWN": 400.0})  # DOWN fails momentum → close it
+    run_rotation_paper(capital=1000, execute=True, universe=list(data), cfg=CFG,
+                       out_dir=tmp_path, bars_fn=lambda s: data[s], rebalancer=rb,
+                       today=TODAY)
+    assert any(o.symbol == "DOWN" and o.close_all for o in rb.sent)
+    assert "DOWN" in json.loads((tmp_path / "state.json").read_text())["owned"]
+    # next run: the sell filled, DOWN no longer in positions → pruned
+    rb2 = FakeRebalancer({"UP": 600.0})
+    (tmp_path / "state.json").write_text(json.dumps(
+        {"owned": ["DOWN", "UP"], "last_rebalance": None}))
+    run_rotation_paper(capital=1000, execute=True, universe=list(data), cfg=CFG,
+                       out_dir=tmp_path, bars_fn=lambda s: data[s], rebalancer=rb2,
+                       today=TODAY)
+    assert json.loads((tmp_path / "state.json").read_text())["owned"] == ["UP"]
