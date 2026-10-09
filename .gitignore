@@ -7,7 +7,15 @@ tsconfig.tsbuildinfo
 # GMAOS / EAOS
 __pycache__/
 data/
+# Paper-trading ledgers are the auditable track record — keep them in git.
+# (A child of an ignored directory can't be re-included, so re-include the
+# chain explicitly: data → tradegate → the two ledger dirs only.)
+!/data/
+/data/*
 !/data/tradegate/
+/data/tradegate/*
+!/data/tradegate/daily/
+!/data/tradegate/rotation/
 *.sqlite3
 backups/
 .env

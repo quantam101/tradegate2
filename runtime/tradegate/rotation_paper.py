@@ -15,6 +15,15 @@ Each weekday after the US close:
 Paper only: the order path is hard-wired to ``paper-api.alpaca.markets``
 and refuses any other base URL. ``--capital`` caps the budget so the paper
 account mirrors the $1,000 backtests even if it holds more.
+
+Safety rules:
+* Only symbols the rotation itself bought (``state.json`` → ``owned``) are
+  ever sold; other positions in the account are left alone. A dedicated
+  paper account is still recommended so overlapping symbols can't mix.
+* Orders are placed only from the latest completed session's bars; if the
+  newest bar is more than ``max_data_age_days`` old the run defers.
+* The rebalance date advances only when every order was accepted, so a
+  rejected order is retried the next day instead of waiting a full cycle.
 """
 
 from __future__ import annotations
@@ -107,7 +116,8 @@ def run_rotation_paper(capital: float = 1000.0, execute: bool = False,
                        universe: list[str] | None = None,
                        cfg: RotationConfig | None = None,
                        out_dir: Path = OUT_DIR,
-                       bars_fn=_bars, rebalancer: AlpacaRebalancer | None = None) -> dict:
+                       bars_fn=_bars, rebalancer: AlpacaRebalancer | None = None,
+                       today: str | None = None, max_data_age_days: int = 4) -> dict:
     cfg = cfg or RotationConfig()
     universe = universe or UNIVERSE
     hist, errors = {}, {}
@@ -121,13 +131,20 @@ def run_rotation_paper(capital: float = 1000.0, execute: bool = False,
     out_dir.mkdir(parents=True, exist_ok=True)
     state_path = out_dir / "state.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
-    ref = max(hist.values(), key=len)
-    asof = ref[-1]["date"]
-    dates = [b["date"] for b in ref]
+    # the newest observed session, not the longest history
+    asof = max(b[-1]["date"] for b in hist.values() if b)
+    dates = sorted({b["date"] for bars in hist.values() for b in bars})
+    today = today or datetime.now(timezone.utc).date().isoformat()
+    age = (datetime.fromisoformat(today) - datetime.fromisoformat(asof)).days
     record: dict = {"run_at": datetime.now(timezone.utc).isoformat(), "asof": asof,
                     "capital": capital, "config": cfg.to_dict(),
                     "data_errors": errors, "executed": False}
-    rebalance = is_rebalance_day(dates, state.get("last_rebalance"), cfg.rebalance_every)
+    if age > max_data_age_days:
+        record["deferred_stale_data"] = {"asof": asof, "age_days": age}
+        rebalance = False
+    else:
+        rebalance = is_rebalance_day(dates, state.get("last_rebalance"),
+                                     cfg.rebalance_every)
     record["rebalance_day"] = rebalance
     if rebalance:
         # every symbol in the target must have today's close (no stale data)
@@ -138,7 +155,9 @@ def run_rotation_paper(capital: float = 1000.0, execute: bool = False,
         deferred = False
         if execute:
             rb = rebalancer or AlpacaRebalancer()
-            held = rb.positions()
+            owned = set(state.get("owned", []))
+            # never touch positions the rotation didn't open
+            held = {s: v for s, v in rb.positions().items() if s in owned}
             unpriced = sorted(s for s in held if s not in fresh)
             if unpriced:
                 # a missing bar is unknown, not a sell signal: retry tomorrow
@@ -154,6 +173,20 @@ def run_rotation_paper(capital: float = 1000.0, execute: bool = False,
                                              "accepted": bool(resp is not None)})
                 record["executed"] = True
                 record["budget"] = budget
+                rejected = [o["symbol"] for o in record["orders"] if not o["accepted"]]
+                accepted = {o["symbol"]: o for o in record["orders"] if o["accepted"]}
+                # ownership: keep what we still hold or just bought; drop closed
+                for sym, o in accepted.items():
+                    if o["close_all"]:
+                        owned.discard(sym)
+                    elif o["side"] == "buy":
+                        owned.add(sym)
+                state["owned"] = sorted(owned)
+                if rejected:
+                    # retry tomorrow rather than wait a full cycle
+                    record["rejected_orders"] = rejected
+                    deferred = True
+                    state_path.write_text(json.dumps(state, indent=2))
         if not deferred:
             state["last_rebalance"] = asof
             state_path.write_text(json.dumps(state, indent=2))
