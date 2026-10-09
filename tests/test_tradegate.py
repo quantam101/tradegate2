@@ -94,10 +94,28 @@ def test_close_all_marks_each_symbol_at_its_own_price():
                                     100.0, 400.0, 900.0, 0, 30), 500.0))
     asyncio.run(broker.on_tick(Tick("AAA", 1, 11, 10.9, 11.1, 0, 0, 0, high=11, low=10.5)))
     asyncio.run(broker.on_tick(Tick("BBB", 1, 505, 504, 506, 0, 0, 0, high=506, low=501)))
-    fills = asyncio.run(broker.close_all(505.0, 2))
+    fills = asyncio.run(broker.close_all(505.0, 2, ref_symbol="BBB"))
     by = {f.symbol: f for f in fills}
     assert by["AAA"].price == 11
     assert by["AAA"].pnl == pytest.approx(10.0)
+
+
+def test_close_all_without_ref_symbol_uses_explicit_price():
+    broker = PaperBroker(fee_bps=0)
+    asyncio.run(broker.submit(Order("X", Side.BUY, Strategy.BETA_REVERSION,
+                                    100.0, 90.0, 150.0, 0, 30), 100.0))
+    fills = asyncio.run(broker.close_all(105.0, 1))
+    assert fills[0].price == 105
+
+
+def test_gap_up_through_target_beats_later_low_below_stop():
+    broker = PaperBroker(fee_bps=0)
+    order = Order("X", Side.BUY, Strategy.BETA_REVERSION, 100.0, 90.0, 110.0, 0, 30)
+    asyncio.run(broker.submit(order, 100.0))
+    fills = asyncio.run(broker.on_tick(
+        Tick("X", 1, 86, 85, 87, 0, 0, 0, high=125, low=85, open=120)))
+    assert fills[0].kind == "EXIT_TP"
+    assert fills[0].price == 120
 
 
 def test_drawdown_breaker_halts(tmp_path):
