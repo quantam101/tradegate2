@@ -159,9 +159,12 @@ def run_rotation_paper(capital: float = 1000.0, execute: bool = False,
         deferred = False
         if execute:
             rb = rebalancer or AlpacaRebalancer()
-            owned = set(state.get("owned", []))
+            positions = rb.positions()
+            # a symbol stays owned until its position is actually gone: an
+            # accepted sell can still be cancelled before the open
+            owned = {s for s in state.get("owned", []) if s in positions}
             # never touch positions the rotation didn't open
-            held = {s: v for s, v in rb.positions().items() if s in owned}
+            held = {s: v for s, v in positions.items() if s in owned}
             unpriced = sorted(s for s in held if s not in fresh)
             if unpriced:
                 # a missing bar is unknown, not a sell signal: retry tomorrow
@@ -179,11 +182,10 @@ def run_rotation_paper(capital: float = 1000.0, execute: bool = False,
                 record["budget"] = budget
                 rejected = [o["symbol"] for o in record["orders"] if not o["accepted"]]
                 accepted = {o["symbol"]: o for o in record["orders"] if o["accepted"]}
-                # ownership: keep what we still hold or just bought; drop closed
+                # ownership: add accepted buys; exits are released only once
+                # the position disappears (pruned at the start of a run)
                 for sym, o in accepted.items():
-                    if o["close_all"]:
-                        owned.discard(sym)
-                    elif o["side"] == "buy":
+                    if o["side"] == "buy" and not o["close_all"]:
                         owned.add(sym)
                 state["owned"] = sorted(owned)
                 if rejected:
