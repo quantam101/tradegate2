@@ -64,6 +64,42 @@ def test_paper_broker_take_profit():
     assert fills[0].kind == "EXIT_TP"
 
 
+def test_paper_broker_gap_down_fills_at_open_not_stop():
+    broker = PaperBroker(fee_bps=0)
+    order = Order("X", Side.BUY, Strategy.BETA_REVERSION, 100.0, 90.0, 150.0, 0, 30)
+    asyncio.run(broker.submit(order, 100.0))
+    # overnight gap opens at 70, well through the 90 stop
+    fills = asyncio.run(broker.on_tick(
+        Tick("X", 1, 72, 71, 73, 0, 0, 0, high=75, low=68, open=70)))
+    assert fills[0].kind == "EXIT_STOP"
+    assert fills[0].price == 70
+    assert fills[0].pnl == pytest.approx(-30.0)
+
+
+def test_paper_broker_gap_up_fills_at_open_not_target():
+    broker = PaperBroker(fee_bps=0)
+    order = Order("X", Side.BUY, Strategy.BETA_REVERSION, 100.0, 90.0, 110.0, 0, 30)
+    asyncio.run(broker.submit(order, 100.0))
+    fills = asyncio.run(broker.on_tick(
+        Tick("X", 1, 125, 124, 126, 0, 0, 0, high=130, low=118, open=120)))
+    assert fills[0].kind == "EXIT_TP"
+    assert fills[0].price == 120
+
+
+def test_close_all_marks_each_symbol_at_its_own_price():
+    broker = PaperBroker(fee_bps=0)
+    asyncio.run(broker.submit(Order("AAA", Side.BUY, Strategy.BETA_REVERSION,
+                                    100.0, 5.0, 50.0, 0, 30), 10.0))
+    asyncio.run(broker.submit(Order("BBB", Side.BUY, Strategy.BETA_REVERSION,
+                                    100.0, 400.0, 900.0, 0, 30), 500.0))
+    asyncio.run(broker.on_tick(Tick("AAA", 1, 11, 10.9, 11.1, 0, 0, 0, high=11, low=10.5)))
+    asyncio.run(broker.on_tick(Tick("BBB", 1, 505, 504, 506, 0, 0, 0, high=506, low=501)))
+    fills = asyncio.run(broker.close_all(505.0, 2))
+    by = {f.symbol: f for f in fills}
+    assert by["AAA"].price == 11
+    assert by["AAA"].pnl == pytest.approx(10.0)
+
+
 def test_drawdown_breaker_halts(tmp_path):
     store = ConfigStore(EngineConfig(max_drawdown_limit=0.05))
     equity = {"v": 1000.0}

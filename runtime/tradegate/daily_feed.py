@@ -118,6 +118,7 @@ def bars_to_ticks(symbol: str, bars: list[Bar]) -> list[Tick]:
             volume_delta=(b.volume if b.close >= b.open else -b.volume),
             high=b.high,
             low=b.low,
+            open=b.open,
         ))
     return ticks
 
