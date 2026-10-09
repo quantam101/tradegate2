@@ -103,6 +103,10 @@ class AlpacaRebalancer:
         rows = self.broker._req("GET", "/v2/positions") or []
         return {r["symbol"]: float(r["market_value"]) for r in rows}
 
+    def order(self, order_id: str) -> dict | None:
+        """Current state of one order (status, filled_qty, filled_avg_price)."""
+        return self.broker._req("GET", f"/v2/orders/{urllib.parse.quote(order_id)}")
+
     def submit(self, o: PlannedOrder) -> dict | None:
         if o.close_all:
             return self.broker._req("DELETE",

@@ -16,6 +16,7 @@ data/
 /data/tradegate/*
 !/data/tradegate/daily/
 !/data/tradegate/rotation/
+!/data/tradegate/dipbuy/
 *.sqlite3
 backups/
 .env
