@@ -54,3 +54,46 @@ The CSV columns are `symbol,date,open,high,low,close,volume`, with daily bars.
 - Crypto and forex are tested through ETFs, which trade only during regular
   US market hours.
 - No live execution path is wired yet. Run it paper-only first.
+
+## Optimization study (Oct 2026): more tuning made it worse
+
+The search covered 864 configs over two universes: the 10 ETFs above, and 25
+ETFs that add the 11 sector SPDRs, SMH, EFA, EEM, SLV and IEF. It also varied
+lookback, top-K, SMA, rebalance frequency, ranking (return vs return/vol) and
+volatility targeting at 0, 10, 15 and 20%.
+
+The selection rule was fixed in advance: highest design-window Sharpe with a
+design drawdown of 15% or less.
+
+| | Result |
+|---|---|
+| Chosen config | 25 ETFs, 126d, top 3, rank by return/vol, 10% vol target |
+| Design window | +41.3%, Sharpe 1.48, max DD 9.0% |
+| **Forward test** | **$1,013.65 (+1.4%)**, max DD 5.8% |
+| Probability of backtest overfitting (CSCV, 10 blocks) | **0.69** (worse than a coin flip) |
+| Deflated Sharpe of the chosen config | **0.77** (below the 0.95 bar) |
+| Forward test across all 864 configs | median +4.5%, 795/864 positive |
+
+**Conclusion:** the momentum idea itself holds up out of sample, since 92% of
+configs made money. Picking the best-looking config is overfitting, and the
+simple defaults (+7.2%) beat the tuned pick (+1.4%). The defaults stay.
+`runtime/tradegate/validation.py` (PBO and deflated Sharpe) is now the gate
+for any future change.
+
+Volatility targeting (`target_vol`) is available but off by default. On the
+diversified ETF basket it lowered drawdown slightly without improving return.
+On a concentrated basket of volatile stocks (RKLB, SMCI, MRVL, ONDS and
+crypto ETFs) it cut the forward-test max drawdown from 51.5% to 21.9%, and the
+return fell from +44.9% to +26.0%. Exposure is capped at 100%, so it never
+uses leverage.
+
+## Daily paper trading
+
+`python -m runtime.tradegate rotation-paper --capital 1000 --execute` runs in
+the `TradeGate Daily Paper Run` workflow after each US close. On rebalance
+days it computes the target from real bars. When `ALPACA_PAPER_KEY` and
+`ALPACA_PAPER_SECRET` are set, it rebalances the **Alpaca paper** account with
+a $1,000 budget; the order path is hard-wired to `paper-api.alpaca.markets`.
+Every run appends to `data/tradegate/rotation/YYYY-MM-DD.json`.
+
+If a held symbol has no fresh bar, the rebalance is deferred to the next day.

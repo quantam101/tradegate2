@@ -128,3 +128,37 @@ def test_short_gap_in_held_symbol_is_tolerated():
     gap = {b[70]["date"], b[71]["date"]}
     res = run_rotation({"A": a, "B": _drop(b, gap)}, CFG, 1000.0)
     assert res.end_value > 0
+
+
+def _noisy(sym, n, drift, amp, seed):
+    import random
+    rnd, px, bars = random.Random(seed), 100.0, []
+    for i in range(n):
+        px *= 1 + drift + rnd.uniform(-amp, amp)
+        d = f"2025-{1 + i // 28:02d}-{1 + i % 28:02d}"
+        bars.append({"date": d, "open": px, "high": px, "low": px, "close": px})
+    return bars
+
+
+def test_vol_target_scales_down_volatile_basket_and_never_levers():
+    hist = {"WILD": _noisy("WILD", 60, 0.004, 0.05, 1),
+            "CALM": _noisy("CALM", 60, 0.002, 0.002, 2)}
+    cfg = RotationConfig(**{**CFG.to_dict(), "target_vol": 0.10})
+    w = _target_weights(hist, cfg)
+    assert 0 < sum(w.values()) < 1.0
+    calm = _target_weights({"CALM": hist["CALM"]},
+                           RotationConfig(**{**CFG.to_dict(), "target_vol": 5.0}))
+    assert sum(calm.values()) == pytest.approx(1.0)  # capped at max_exposure
+
+
+def test_vol_target_off_is_fully_invested():
+    hist = {"A": _noisy("A", 60, 0.004, 0.03, 3)}
+    assert sum(_target_weights(hist, CFG).values()) == pytest.approx(1.0)
+
+
+def test_rank_by_sharpe_prefers_smoother_trend():
+    hist = {"JUMPY": _noisy("JUMPY", 60, 0.004, 0.06, 4),
+            "SMOOTH": _noisy("SMOOTH", 60, 0.003, 0.001, 5)}
+    cfg = RotationConfig(**{**CFG.to_dict(), "top_k": 1, "rank_by": "sharpe",
+                            "use_sma": False})
+    assert set(_target_weights(hist, cfg)) == {"SMOOTH"}

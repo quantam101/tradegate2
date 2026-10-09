@@ -59,6 +59,14 @@ class RotationConfig:
     vol_window: int = 63
     cost_bps: float = 5.0        # per traded dollar (commission+slippage)
     max_stale_bars: int = 5      # held symbol unpriced this many days → error
+    # Volatility targeting (Barroso & Santa-Clara 2015; Moreira & Muir 2017):
+    # scale total exposure so the portfolio's trailing realized volatility
+    # matches target_vol (annualized); the remainder sits in cash. 0 = off.
+    # Exposure is capped at max_exposure — 1.0 means never leveraged.
+    target_vol: float = 0.0
+    max_exposure: float = 1.0
+    # "return": rank by trailing return; "sharpe": by return / volatility.
+    rank_by: str = "return"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -130,14 +138,38 @@ def _target_weights(hist: dict[str, list[dict]], cfg: RotationConfig) -> dict[st
         rets = [b / a - 1 for a, b in zip(closes[-cfg.vol_window - 1:-1],
                                          closes[-cfg.vol_window:])]
         vol = statistics.pstdev(rets) or 1e-9
-        scored.append((mom, sym, vol))
+        score = mom / (vol * math.sqrt(cfg.lookback)) if cfg.rank_by == "sharpe" else mom
+        scored.append((score, sym, vol))
     scored.sort(reverse=True)
     picks = scored[:cfg.top_k]
     if not picks:
         return {}
     raw = {s: (1 / v if cfg.inverse_vol else 1.0) for _, s, v in picks}
     tot = sum(raw.values())
-    return {s: w / tot for s, w in raw.items()}
+    weights = {s: w / tot for s, w in raw.items()}
+    if cfg.target_vol > 0:
+        port_vol = _portfolio_vol(hist, weights, cfg.vol_window)
+        if port_vol > 0:
+            scale = min(cfg.max_exposure, cfg.target_vol / port_vol)
+            weights = {s: w * scale for s, w in weights.items()}
+    return weights
+
+
+def _portfolio_vol(hist: dict[str, list[dict]], weights: dict[str, float],
+                   window: int) -> float:
+    """Annualized realized vol of the weighted basket over the last
+    ``window`` days on which every holding traded (dates aligned, so
+    correlations are respected — not a sum of individual vols)."""
+    series = {s: {b["date"]: b["close"] for b in hist[s][-(window + 1):]}
+              for s in weights}
+    common = sorted(set.intersection(*(set(v) for v in series.values())))
+    if len(common) < 3:
+        return 0.0
+    port = []
+    for a, b in zip(common, common[1:]):
+        port.append(sum(w * (series[s][b] / series[s][a] - 1)
+                        for s, w in weights.items()))
+    return statistics.pstdev(port) * math.sqrt(252)
 
 
 def run_rotation(data: dict[str, list[dict]], cfg: RotationConfig | None = None,

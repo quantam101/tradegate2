@@ -127,6 +127,12 @@ def main(argv=None):
         out["final_holdings"] = res.holdings[-1][1] if res.holdings else {}
         print(json.dumps(out, indent=2))
 
+    elif mode == "rotation-paper":
+        # Daily real-data paper run of the rotation; --execute places orders
+        # on the Alpaca PAPER account when ALPACA_PAPER_KEY/SECRET are set.
+        from .rotation_paper import main as rotation_paper_main
+        rotation_paper_main(argv[1:])
+
     elif mode == "sentiment":
         from .sentiment import main as sentiment_main
         sentiment_main(argv[1:])
