@@ -37,11 +37,21 @@ jobs:
             --symbols SPY,QQQ,AAPL,MSFT,NVDA \
             --capital 10000
 
+      - name: Momentum rotation paper run
+        continue-on-error: true  # never block the daily ledger commit
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+        # Rebalances the Alpaca PAPER account (paper endpoint only) on
+        # rebalance days when keys are configured; otherwise logs the
+        # target portfolio data-only. Budget capped at $1,000.
+        run: python -m runtime.tradegate rotation-paper --capital 1000 --execute
+
       - name: Commit daily ledger
         run: |
           git config user.name "tradegate-paper[bot]"
           git config user.email "tradegate-paper[bot]@users.noreply.github.com"
-          git add data/tradegate/daily/
+          git add -A data/tradegate/
           git diff --cached --quiet || git commit -m "chore(tradegate): daily paper ledger $(date -u +%F)"
           git push
 
@@ -49,5 +59,7 @@ jobs:
         if: always()
         with:
           name: daily-paper-${{ github.run_id }}
-          path: data/tradegate/daily/
+          path: |
+            data/tradegate/daily/
+            data/tradegate/rotation/
           retention-days: 90
