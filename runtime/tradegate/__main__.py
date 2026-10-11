@@ -1,4 +1,4 @@
-"""CLI: python -m runtime.tradegate {paper|backtest|optimize}"""
+"""CLI: python -m runtime.tradegate {paper|backtest|optimize|daily|rotation|...}"""
 
 from __future__ import annotations
 
@@ -106,6 +106,26 @@ def main(argv=None):
             broker=AlpacaPaperBroker())
         feed = _TapFeed(AlpacaTradeFeed(syms), orch.broker, orch.stages)
         asyncio.run(orch.run(feed))
+
+    elif mode == "rotation":
+        # Portfolio-level momentum rotation on real daily bars from a CSV
+        # (symbol,date,open,high,low,close,volume). Trades from --start.
+        from .rotation import RotationConfig, buy_and_hold, load_csv, run_rotation
+        if "--csv" not in argv:
+            print("rotation requires --csv PATH")
+            sys.exit(1)
+        data = load_csv(Path(argv[argv.index("--csv") + 1]))
+        cap = (float(argv[argv.index("--capital") + 1])
+               if "--capital" in argv else 1000.0)
+        start = argv[argv.index("--start") + 1] if "--start" in argv else None
+        end = argv[argv.index("--end") + 1] if "--end" in argv else None
+        res = run_rotation(data, RotationConfig(), capital=cap, start=start, end=end)
+        first = res.equity[0][0]
+        out = res.metrics()
+        out["window"] = {"from": first, "to": res.equity[-1][0]}
+        out["equal_weight_buy_hold_roi"] = buy_and_hold(data, list(data), first, end)
+        out["final_holdings"] = res.holdings[-1][1] if res.holdings else {}
+        print(json.dumps(out, indent=2))
 
     elif mode == "sentiment":
         from .sentiment import main as sentiment_main
