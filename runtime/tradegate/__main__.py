@@ -133,6 +133,26 @@ def main(argv=None):
         from .rotation_paper import main as rotation_paper_main
         rotation_paper_main(argv[1:])
 
+    elif mode == "dip-paper":
+        # Daily real-data paper run of the dip-buying strategy on its OWN
+        # Alpaca paper account (ALPACA_DIP_PAPER_KEY/SECRET).
+        from .dip_paper import main as dip_paper_main
+        dip_paper_main(argv[1:])
+
+    elif mode == "dipbuy":
+        # Backtest dip buying on a CSV of daily bars.
+        from .dipbuy import DipConfig, run_dipbuy
+        from .rotation import load_csv
+        if "--csv" not in argv:
+            print("dipbuy requires --csv PATH")
+            sys.exit(1)
+        data = load_csv(Path(argv[argv.index("--csv") + 1]))
+        cap = (float(argv[argv.index("--capital") + 1])
+               if "--capital" in argv else 1000.0)
+        start = argv[argv.index("--start") + 1] if "--start" in argv else None
+        end = argv[argv.index("--end") + 1] if "--end" in argv else None
+        print(json.dumps(run_dipbuy(data, DipConfig(), cap, start, end).metrics(), indent=2))
+
     elif mode == "sentiment":
         from .sentiment import main as sentiment_main
         sentiment_main(argv[1:])
