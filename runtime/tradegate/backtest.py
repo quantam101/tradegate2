@@ -109,7 +109,8 @@ async def _run_pipeline(ticks: Iterable[Tick], config: EngineConfig,
     # RiskAgent returns on the first, the second is simply discarded.
     await asyncio.gather(*tasks, return_exceptions=True)
     if last_tick:
-        await broker.close_all(last_tick.price, last_tick.timestamp)
+        await broker.close_all(last_tick.price, last_tick.timestamp,
+                               ref_symbol=last_tick.symbol)
     return broker
 
 

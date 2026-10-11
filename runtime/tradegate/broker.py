@@ -64,7 +64,8 @@ class Fill:
 class Broker(Protocol):
     async def submit(self, order: Order, ref_price: float) -> Fill | None: ...
     async def on_tick(self, tick: Tick) -> list[Fill]: ...
-    async def close_all(self, ref_price: float, ts: float) -> list[Fill]: ...
+    async def close_all(self, ref_price: float, ts: float,
+                        ref_symbol: str | None = None) -> list[Fill]: ...
 
 
 class PaperBroker:
@@ -125,14 +126,28 @@ class PaperBroker:
             return out
         exit_fill: Fill | None = None
         if pos.side == Side.BUY:
-            pos.peak_price = max(pos.peak_price, tick.high)
-            # ratchet trailing stop with price advances
-            if pos.atr_offset > 0:
-                pos.stop_price = max(pos.stop_price, pos.peak_price - pos.atr_offset)
-            if tick.low <= pos.stop_price:
+            # Gap-aware fills: a bar that opens through a level fills at the
+            # open, not the level — a stop can't save you from an overnight
+            # gap down, and a gap up above target pays the open.
+            # The open prints before the bar's high/low, so both open-gap
+            # outcomes are decided first; stop-before-target is kept only
+            # for the intrabar case where the order of high/low is unknown.
+            if tick.open and tick.open <= pos.stop_price:
+                exit_fill = self._exit(pos, tick.open, tick.timestamp, "EXIT_STOP")
+            elif tick.open and tick.open >= pos.take_profit:
+                exit_fill = self._exit(pos, tick.open, tick.timestamp, "EXIT_TP")
+            elif tick.low <= pos.stop_price:
                 exit_fill = self._exit(pos, pos.stop_price, tick.timestamp, "EXIT_STOP")
             elif tick.high >= pos.take_profit:
                 exit_fill = self._exit(pos, pos.take_profit, tick.timestamp, "EXIT_TP")
+            else:
+                # Ratchet only AFTER exits are evaluated against the levels
+                # in force when the bar opened. Raising the stop with this
+                # bar's high and then stopping on this bar's low assumes the
+                # high printed first — an optimistic intrabar look-ahead.
+                pos.peak_price = max(pos.peak_price, tick.high)
+                if pos.atr_offset > 0:
+                    pos.stop_price = max(pos.stop_price, pos.peak_price - pos.atr_offset)
         if exit_fill:
             out.append(exit_fill)
             # Realized-equity breaker: a loss this tick can breach the
@@ -187,10 +202,23 @@ class PaperBroker:
         self._record(fill)
         return fill
 
-    async def close_all(self, ref_price: float, ts: float) -> list[Fill]:
+    async def close_all(self, ref_price: float, ts: float,
+                        ref_symbol: str | None = None) -> list[Fill]:
+        """Flatten every position.
+
+        ``ref_symbol`` names the symbol ``ref_price`` belongs to: that
+        position closes at ``ref_price`` and every other symbol at its own
+        last seen price (marking an AAPL position at SPY's price is a
+        phantom-P&L bug in multi-symbol runs). Without ``ref_symbol`` the
+        caller asserts ``ref_price`` is current for all positions.
+        """
         out = []
         for pos in list(self.positions.values()):
-            out.append(self._exit(pos, ref_price, ts, "EXIT_EOD"))
+            if ref_symbol is None or pos.symbol == ref_symbol:
+                px = ref_price
+            else:
+                px = self.last_px.get(pos.symbol, ref_price)
+            out.append(self._exit(pos, px, ts, "EXIT_EOD"))
         return out
 
     def stats(self) -> dict:

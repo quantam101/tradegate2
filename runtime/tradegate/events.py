@@ -38,6 +38,7 @@ class Tick:
     volume_delta: float  # signed taker volume this frame (CVD increment)
     high: float = 0.0    # bar high (for ATR); defaults to price
     low: float = 0.0     # bar low; defaults to price
+    open: float = 0.0    # bar open; 0 = unknown (no gap modelling)
 
     def __post_init__(self):
         if not self.high:
