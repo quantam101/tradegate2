@@ -1,0 +1,42 @@
+[
+  {
+    "run_at": "2026-10-11T21:38:50.735926+00:00",
+    "asof": "2026-10-09",
+    "capital": 1000.0,
+    "config": {
+      "lookback": 189,
+      "top_k": 4,
+      "sma": 100,
+      "use_sma": true,
+      "abs_momentum": true,
+      "rebalance_every": 21,
+      "inverse_vol": true,
+      "vol_window": 63,
+      "cost_bps": 5.0,
+      "max_stale_bars": 5,
+      "target_vol": 0.0,
+      "max_exposure": 1.0,
+      "rank_by": "return"
+    },
+    "data_errors": {},
+    "executed": false,
+    "rebalance_day": true,
+    "target_weights": {
+      "QQQ": 0.163817,
+      "SPY": 0.27302,
+      "UUP": 0.563163
+    },
+    "closes": {
+      "SPY": 778.5700073242188,
+      "QQQ": 751.27001953125,
+      "IWM": 278.94000244140625,
+      "GLD": 384.5799865722656,
+      "TLT": 77.9800033569336,
+      "IBIT": 46.54999923706055,
+      "ETHA": 55.9900016784668,
+      "FXE": 103.37000274658203,
+      "FXY": 57.900001525878906,
+      "UUP": 29.020000457763672
+    }
+  }
+]
