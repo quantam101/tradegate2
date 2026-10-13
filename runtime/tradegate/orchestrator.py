@@ -49,6 +49,11 @@ class TradeGateOrchestrator:
         self.initial_capital = initial_capital
         self.equity = initial_capital
         self.broker = broker or PaperBroker(ledger_path=ledger_path)
+        # Restart recovery: fills restored from the ledger (broker.__init__
+        # via load_ledger) mean realized equity continues across restarts —
+        # seed equity before wrapping _record so restored fills aren't
+        # double-counted and the drawdown breaker keeps its true base.
+        self.equity += sum(f.pnl for f in self.broker.fills)
         # Realized-equity breaker: flatten fires the tick a loss breaches
         # the limit, even with no new signal in flight.
         self.broker.equity_ref = lambda: self.equity

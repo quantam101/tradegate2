@@ -96,6 +96,9 @@ def main(argv=None):
                 if "--symbols" in argv else ["SPY", "QQQ", "AAPL", "MSFT", "NVDA"])
         cap = (float(argv[argv.index("--capital") + 1])
                if "--capital" in argv else 1000.0)
+        broker = AlpacaPaperBroker(
+            ledger_path=Path("data/tradegate/fills.jsonl"))
+        broker.rehydrate()  # resume tracking open positions after restart
         orch = TradeGateOrchestrator(
             initial_capital=cap,
             ledger_path=Path("data/tradegate/fills.jsonl"),
@@ -103,8 +106,19 @@ def main(argv=None):
             discord_url=os.environ.get("TRADEGATE_DISCORD_WEBHOOK"),
             telegram_token=os.environ.get("TRADEGATE_TELEGRAM_TOKEN"),
             telegram_chat=os.environ.get("TRADEGATE_TELEGRAM_CHAT"),
-            broker=AlpacaPaperBroker())
-        feed = _TapFeed(AlpacaTradeFeed(syms), orch.broker, orch.stages)
+            broker=broker)
+
+        def on_feed_event(kind, payload):
+            # Feed events (connect/reconnect/stall) → telemetry alerts.
+            asyncio.get_running_loop().create_task(
+                orch.telemetry.emit(kind, {
+                    "text": f"{kind}: {payload}", **payload}))
+
+        stall = float(os.environ.get("TRADEGATE_STALL_TIMEOUT_SEC", "300"))
+        feed = _TapFeed(
+            AlpacaTradeFeed(syms, stall_timeout_sec=stall,
+                            on_event=on_feed_event),
+            orch.broker, orch.stages)
         asyncio.run(orch.run(feed))
 
     elif mode == "rotation":

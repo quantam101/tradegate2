@@ -29,8 +29,9 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from .broker import Broker, Fill, Order, PaperBroker, Position
-from .events import Side, Tick
+from .broker import Broker, Fill, Order, PaperBroker, Position, load_ledger
+from .events import Side, Strategy, Tick
+from .resilience import retry
 
 log = logging.getLogger(__name__)
 
@@ -53,9 +54,20 @@ class AlpacaPaperBroker(Broker):
         self.fills: list[Fill] = []
         # symbol → our local Position record (Alpaca holds the real one)
         self.positions: dict[str, Position] = {}
+        if self.ledger_path:
+            self.fills.extend(load_ledger(self.ledger_path))
 
     # ── HTTP ────────────────────────────────────────────────────────────
-    def _req(self, method: str, path: str, body: dict | None = None):
+    @staticmethod
+    def _retryable(e: Exception) -> bool:
+        """Transient failures worth a retry: 429, 5xx, and network errors.
+        Every other HTTPError is a client bug — retrying changes nothing."""
+        if isinstance(e, urllib.error.HTTPError):
+            return e.code == 429 or e.code >= 500
+        return isinstance(e, (urllib.error.URLError, TimeoutError, OSError))
+
+    def _req(self, method: str, path: str, body: dict | None = None,
+             attempts: int = 3):
         req = urllib.request.Request(
             self.base + path,
             data=json.dumps(body).encode() if body is not None else None,
@@ -66,14 +78,18 @@ class AlpacaPaperBroker(Broker):
                 "Content-Type": "application/json",
                 "User-Agent": "tradegate-paper/1.0",
             })
-        try:
-            with urllib.request.urlopen(req, timeout=30) as r:
-                raw = r.read()
-                return json.loads(raw) if raw else {}
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                return None
-            raise
+
+        def call():
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    raw = r.read()
+                    return json.loads(raw) if raw else {}
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    return None
+                raise
+
+        return retry(call, self._retryable, attempts=attempts)
 
     def _record(self, fill: Fill) -> None:
         self.fills.append(fill)
@@ -158,6 +174,38 @@ class AlpacaPaperBroker(Broker):
             out.append(fill)
             del self.positions[sym]
         return out
+
+    def rehydrate(self) -> int:
+        """Rebuild local position records from Alpaca after a restart.
+
+        Without this, a worker restart loses ``self.positions``: exits
+        filled by server-side bracket legs would never be recorded and a
+        symbol could get a duplicate entry. Local records are rebuilt
+        with entry price/qty from Alpaca; stop/take-profit stay with the
+        server-side bracket (unknown locally → ``atr_offset`` 0), which
+        is exactly what ``on_tick`` needs to detect the exit fill.
+        Returns the number of positions restored.
+        """
+        live = self._req("GET", "/v2/positions") or []
+        restored = 0
+        for p in live:
+            sym = p.get("symbol")
+            if not sym:
+                continue
+            qty = float(p.get("qty", 0))
+            entry = float(p.get("avg_entry_price", 0))
+            if qty <= 0 or entry <= 0:
+                continue
+            self.positions[sym] = Position(
+                symbol=sym, side=Side.BUY, qty=qty,
+                entry_price=entry, entry_ts=0.0,
+                stop_price=0.0, take_profit=0.0,
+                strategy=Strategy.NONE,  # entry strategy unknown post-restart
+                order_id=f"rehydrated-{sym}", atr_offset=0.0)
+            restored += 1
+        if restored:
+            log.info("rehydrated %d open position(s) from Alpaca", restored)
+        return restored
 
     def stats(self) -> dict:
         return PaperBroker.stats(self)
