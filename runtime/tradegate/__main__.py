@@ -157,6 +157,17 @@ def main(argv=None):
         from .sentiment import main as sentiment_main
         sentiment_main(argv[1:])
 
+    elif mode == "truth-ledger":
+        # Daily model-vs-broker reconciliation for both Alpaca paper
+        # accounts → data/tradegate/truth/ledger.jsonl
+        from .truth_ledger import main as truth_ledger_main
+        truth_ledger_main(argv[1:])
+
+    elif mode == "cost-check":
+        # Rerun the backtest harness at several transaction-cost levels.
+        from .cost_check import main as cost_check_main
+        cost_check_main(argv[1:])
+
 
     else:
         print(__doc__)

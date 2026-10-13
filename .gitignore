@@ -17,6 +17,7 @@ data/
 !/data/tradegate/daily/
 !/data/tradegate/rotation/
 !/data/tradegate/dipbuy/
+!/data/tradegate/truth/
 *.sqlite3
 backups/
 .env

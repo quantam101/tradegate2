@@ -1,0 +1,56 @@
+name: TradeGate Truth Ledger
+
+on:
+  schedule:
+    # Weekdays at 21:45 UTC — after the paper runners (21:30) so the broker
+    # side reflects today's orders.
+    - cron: '45 21 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tradegate-truth
+  cancel-in-progress: false
+
+jobs:
+  truth-ledger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Model-vs-broker reconciliation
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+          ALPACA_DIP_PAPER_KEY: ${{ secrets.ALPACA_DIP_PAPER_KEY }}
+          ALPACA_DIP_PAPER_SECRET: ${{ secrets.ALPACA_DIP_PAPER_SECRET }}
+        # Missing keys degrade the record to model-only — they never fail it.
+        run: python -m runtime.tradegate truth-ledger --capital 1000
+
+      - name: Cost-sensitivity backtest (5/10/20 bps)
+        # Reported and archived daily; exits non-zero if the edge fails at
+        # the highest cost, which fails this job on purpose — a dead edge
+        # is the thing this ledger exists to surface.
+        run: python -m runtime.tradegate cost-check --capital 1000 --costs 5,10,20
+
+      - name: Commit truth ledger
+        run: |
+          git config user.name "tradegate-truth[bot]"
+          git config user.email "tradegate-truth[bot]@users.noreply.github.com"
+          if [ -d data/tradegate/truth ]; then git add data/tradegate/truth; fi
+          git diff --cached --quiet || git commit -m "chore(tradegate): truth ledger $(date -u +%F)"
+          git push
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: truth-ledger-${{ github.run_id }}
+          path: data/tradegate/truth/
+          retention-days: 90
