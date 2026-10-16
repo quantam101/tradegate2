@@ -1,0 +1,25 @@
+[
+  {
+    "run_at": "2026-10-16T23:47:41.800349+00:00",
+    "asof": "2026-10-16",
+    "capital": 1000.0,
+    "config": {
+      "universe": [
+        "SPY",
+        "QQQ",
+        "IWM",
+        "IBIT"
+      ],
+      "rsi_period": 2,
+      "rsi_entry": 10.0,
+      "trend_sma": 200,
+      "exit_sma": 5,
+      "cost_bps": 5.0
+    },
+    "data_errors": {},
+    "executed": false,
+    "signals": {
+      "QQQ": "buy"
+    }
+  }
+]
