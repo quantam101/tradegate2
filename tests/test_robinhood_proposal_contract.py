@@ -58,3 +58,12 @@ def test_robinhood_feed_descriptor_is_proposal_only() -> None:
     assert feed["credential_collection"] == "forbidden"
     assert feed["write_permissions"] == []
     assert "market_context" in feed["read_permissions"]
+
+
+def test_rejected_robinhood_actions_are_audited_without_payloads() -> None:
+    route = (ROOT / "app/api/robinhood/proposals/route.ts").read_text(encoding="utf-8")
+    assert "robinhood-rejections.jsonl" in route
+    assert "event: 'security_rejection'" in route
+    assert "recordRejection('kill_switch_active'" in route
+    assert "recordRejection('invalid_proposal'" in route
+    assert "submitted" not in route.lower() or "submitted payload" not in route.lower()

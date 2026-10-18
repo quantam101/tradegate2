@@ -9,6 +9,7 @@ import { requireApiSession } from '@/lib/api-auth';
 
 const DATA_DIR = process.env.GMAOS_DATA_DIR || path.join(process.cwd(), 'data');
 const PROPOSALS_PATH = path.join(DATA_DIR, 'robinhood-proposals.jsonl');
+const REJECTIONS_PATH = path.join(DATA_DIR, 'robinhood-rejections.jsonl');
 const KILL_SWITCH_PATH = path.join(DATA_DIR, 'robinhood-kill-switch.json');
 
 function proposals(): Record<string, unknown>[] {
@@ -33,6 +34,21 @@ function killSwitchActive(): boolean {
   }
 }
 
+function recordRejection(reason: string, details: unknown) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.appendFileSync(
+    REJECTIONS_PATH,
+    `${JSON.stringify({
+      event: 'security_rejection',
+      action: 'robinhood_proposal_submission',
+      reason,
+      details,
+      created_at: new Date().toISOString(),
+    })}\n`,
+    'utf8',
+  );
+}
+
 export async function GET() {
   const unauthorized = await requireApiSession();
   if (unauthorized) return unauthorized;
@@ -54,6 +70,7 @@ export async function POST(req: NextRequest) {
   const unauthorized = await requireApiSession();
   if (unauthorized) return unauthorized;
   if (killSwitchActive()) {
+    recordRejection('kill_switch_active', []);
     return NextResponse.json(
       { error: 'Robinhood MCP kill switch is active; proposals are halted' },
       { status: 423 },
@@ -62,6 +79,7 @@ export async function POST(req: NextRequest) {
 
   const parsed = validateRobinhoodProposal(await req.json().catch(() => ({})));
   if (!parsed.ok) {
+    recordRejection('invalid_proposal', parsed.errors);
     return NextResponse.json({ error: 'invalid proposal', details: parsed.errors }, { status: 422 });
   }
 

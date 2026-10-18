@@ -38,6 +38,8 @@ Accepted proposals are appended to `robinhood-proposals.jsonl` under `GMAOS_DATA
 - `execution: blocked_until_future_explicit_approval`
 - `risk_review_required: true`
 
+Rejected submissions and kill-switch-blocked attempts are appended to `robinhood-rejections.jsonl` as `security_rejection` audit events. Rejection logs contain the validation reasons only, never the submitted payload.
+
 ## Risk review checklist
 
 Before any proposal is considered for manual review, verify:
