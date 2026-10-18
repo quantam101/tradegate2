@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import yaml
 
@@ -46,3 +47,14 @@ def test_robinhood_docs_define_no_trade_boundary() -> None:
     assert "must not collect robinhood credentials" in text
     assert "must not submit any order" in text
     assert "30 audited proposal-only dry runs" in text
+
+
+def test_robinhood_feed_descriptor_is_proposal_only() -> None:
+    feed = json.loads((ROOT / "data/feeds/robinhood-mcp-trading.json").read_text(encoding="utf-8"))
+    assert feed["source_id"] == "robinhood_mcp"
+    assert feed["state"] == "proposal_only"
+    assert feed["authorization"] == "not_granted"
+    assert feed["execution_enabled"] is False
+    assert feed["credential_collection"] == "forbidden"
+    assert feed["write_permissions"] == []
+    assert "market_context" in feed["read_permissions"]
