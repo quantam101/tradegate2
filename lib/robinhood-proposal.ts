@@ -8,10 +8,17 @@ export const MAX_SOURCE_URL_LENGTH = 500;
 const UNSAFE_TEXT_PATTERNS = [
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/i,
   /\bsk-[a-z0-9_-]{8,}/i,
-  /\b(?:bearer|token|secret|password|credential)\b\s*[:=]\s*[^\s]{6,}/i,
+  /\b(?:bearer|token|secret|password|credential|api[_-]?key|client[_-]?secret|private[_-]?key)\b\s*[:=]\s*[^\s]{6,}/i,
   /\b(?:rh|robinhood)[_-]?(?:access|refresh)?[_-]?token\b/i,
   /\baccount[_-]?(?:id|number)\b\s*[:=]?\s*[0-9]{6,}/i,
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/,
+  /\bAKIA[0-9A-Z]{16}\b/,
+  /\b(?:gh|github_pat|sk_live|sk_test|xox[baprs])[_-][A-Za-z0-9_-]{10,}\b/i,
+];
+
+const UNSAFE_THESIS_PATTERNS = [
+  /\b[A-Za-z0-9_-]{32,}\b/,
+  /\b[A-Za-z0-9+/]{40,}={0,2}\b/,
 ];
 
 export const RISK_REVIEW_CHECKLIST = [
@@ -84,7 +91,10 @@ export function validateRobinhoodProposal(
   if (sourceUrl.length > MAX_SOURCE_URL_LENGTH) errors.push(`source_url exceeds ${MAX_SOURCE_URL_LENGTH} characters`);
 
   const serialized = JSON.stringify(input);
-  if (UNSAFE_TEXT_PATTERNS.some(pattern => pattern.test(serialized))) {
+  if (
+    UNSAFE_TEXT_PATTERNS.some(pattern => pattern.test(serialized)) ||
+    UNSAFE_THESIS_PATTERNS.some(pattern => pattern.test(thesis))
+  ) {
     errors.push('credential, token, and account identifier material is forbidden');
   }
 

@@ -40,6 +40,8 @@ Accepted proposals are appended to `robinhood-proposals.jsonl` under `GMAOS_DATA
 
 Rejected submissions and kill-switch-blocked attempts are appended to `robinhood-rejections.jsonl` as `security_rejection` audit events. Rejection logs contain the validation reasons only, never the submitted payload.
 
+Proposal free text is scanned for credential-like material, including opaque high-entropy tokens; Docker deployments load the same `.env` file as the web service so NextAuth credentials and `NEXTAUTH_SECRET` are available for operator sign-in.
+
 ## Risk review checklist
 
 Before any proposal is considered for manual review, verify:

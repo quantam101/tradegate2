@@ -7,6 +7,7 @@ const DATA_DIR = process.env.GMAOS_DATA_DIR || path.join(process.cwd(), 'data');
 const KILL_SWITCH_PATH = path.join(DATA_DIR, 'robinhood-kill-switch.json');
 
 function state() {
+  if (!fs.existsSync(KILL_SWITCH_PATH)) return { active: false };
   try {
     return JSON.parse(fs.readFileSync(KILL_SWITCH_PATH, 'utf8')) as {
       active?: boolean;
@@ -14,7 +15,8 @@ function state() {
       updated_at?: string;
     };
   } catch {
-    return { active: false };
+    // Match proposal submission semantics: unreadable halt state fails closed.
+    return { active: true, reason: 'kill_switch_state_unreadable_fail_closed' };
   }
 }
 

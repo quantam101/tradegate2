@@ -67,3 +67,24 @@ def test_rejected_robinhood_actions_are_audited_without_payloads() -> None:
     assert "recordRejection('kill_switch_active'" in route
     assert "recordRejection('invalid_proposal'" in route
     assert "submitted" not in route.lower() or "submitted payload" not in route.lower()
+
+
+def test_docker_web_loads_nextauth_environment() -> None:
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    web = compose["services"]["web"]
+    assert ".env" in web["env_file"]
+    assert web["environment"]["NEXTAUTH_URL"] == "${NEXTAUTH_URL}"
+
+
+def test_kill_switch_status_fails_closed_like_submissions() -> None:
+    route = (ROOT / "app/api/robinhood/kill-switch/route.ts").read_text(encoding="utf-8")
+    assert "active: true" in route
+    assert "kill_switch_state_unreadable_fail_closed" in route
+
+
+def test_proposal_validator_blocks_opaque_secret_material() -> None:
+    validator = (ROOT / "lib/robinhood-proposal.ts").read_text(encoding="utf-8")
+    assert "UNSAFE_THESIS_PATTERNS" in validator
+    assert "[A-Za-z0-9_-]{32,}" in validator
+    assert "api[_-]?key|client[_-]?secret|private[_-]?key" in validator
+    assert "AKIA[0-9A-Z]{16}" in validator
