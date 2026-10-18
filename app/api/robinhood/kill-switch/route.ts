@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { requireApiSession } from '@/lib/api-auth';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+const DATA_DIR = process.env.GMAOS_DATA_DIR || path.join(process.cwd(), 'data');
 const KILL_SWITCH_PATH = path.join(DATA_DIR, 'robinhood-kill-switch.json');
 
 function state() {
@@ -18,10 +19,15 @@ function state() {
 }
 
 export async function GET() {
+  const unauthorized = await requireApiSession();
+  if (unauthorized) return unauthorized;
   return NextResponse.json({ connector: 'robinhood_mcp', ...state() });
 }
 
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireApiSession();
+  if (unauthorized) return unauthorized;
+
   const body = (await req.json().catch(() => ({}))) as { active?: unknown; reason?: unknown };
   const active = body.active === true;
   const reason = typeof body.reason === 'string' && body.reason.trim()

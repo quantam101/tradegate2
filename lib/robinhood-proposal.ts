@@ -2,6 +2,17 @@ export const SUPPORTED_ASSET_CLASSES = new Set(['equity']);
 export const BLOCKED_ORDER_TYPES = new Set(['market']);
 export const MAX_PROPOSAL_TTL_SECONDS = 86_400;
 export const MAX_NOTIONAL_USD = 1_000;
+export const MAX_THESIS_LENGTH = 2_000;
+export const MAX_SOURCE_URL_LENGTH = 500;
+
+const UNSAFE_TEXT_PATTERNS = [
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/i,
+  /\bsk-[a-z0-9_-]{8,}/i,
+  /\b(?:bearer|token|secret|password|credential)\b\s*[:=]\s*[^\s]{6,}/i,
+  /\b(?:rh|robinhood)[_-]?(?:access|refresh)?[_-]?token\b/i,
+  /\baccount[_-]?(?:id|number)\b\s*[:=]?\s*[0-9]{6,}/i,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/,
+];
 
 export const RISK_REVIEW_CHECKLIST = [
   'Confirm public source is reachable and timestamped.',
@@ -68,11 +79,13 @@ export function validateRobinhoodProposal(
     if (ttl > MAX_PROPOSAL_TTL_SECONDS) errors.push(`proposal TTL exceeds ${MAX_PROPOSAL_TTL_SECONDS}s`);
   }
   if (!thesis) errors.push('thesis is required');
+  if (thesis.length > MAX_THESIS_LENGTH) errors.push(`thesis exceeds ${MAX_THESIS_LENGTH} characters`);
   if (sourceUrl && !/^https:\/\//.test(sourceUrl)) errors.push('source_url must use https');
+  if (sourceUrl.length > MAX_SOURCE_URL_LENGTH) errors.push(`source_url exceeds ${MAX_SOURCE_URL_LENGTH} characters`);
 
-  const serialized = JSON.stringify(input).toLowerCase();
-  if (/(token|secret|password|account_number|account_id|credential)/.test(serialized)) {
-    errors.push('credential and account identifiers are forbidden');
+  const serialized = JSON.stringify(input);
+  if (UNSAFE_TEXT_PATTERNS.some(pattern => pattern.test(serialized))) {
+    errors.push('credential, token, and account identifier material is forbidden');
   }
 
   if (errors.length) return { ok: false, errors };

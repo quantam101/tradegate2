@@ -5,8 +5,9 @@ import {
   RISK_REVIEW_CHECKLIST,
   validateRobinhoodProposal,
 } from '@/lib/robinhood-proposal';
+import { requireApiSession } from '@/lib/api-auth';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+const DATA_DIR = process.env.GMAOS_DATA_DIR || path.join(process.cwd(), 'data');
 const PROPOSALS_PATH = path.join(DATA_DIR, 'robinhood-proposals.jsonl');
 const KILL_SWITCH_PATH = path.join(DATA_DIR, 'robinhood-kill-switch.json');
 
@@ -23,14 +24,19 @@ function proposals(): Record<string, unknown>[] {
 }
 
 function killSwitchActive(): boolean {
+  if (!fs.existsSync(KILL_SWITCH_PATH)) return false;
   try {
     return Boolean(JSON.parse(fs.readFileSync(KILL_SWITCH_PATH, 'utf8')).active);
   } catch {
-    return false;
+    // Unknown emergency-halt state must fail closed.
+    return true;
   }
 }
 
 export async function GET() {
+  const unauthorized = await requireApiSession();
+  if (unauthorized) return unauthorized;
+
   const all = proposals();
   return NextResponse.json({
     mode: 'proposal_only',
@@ -45,6 +51,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireApiSession();
+  if (unauthorized) return unauthorized;
   if (killSwitchActive()) {
     return NextResponse.json(
       { error: 'Robinhood MCP kill switch is active; proposals are halted' },

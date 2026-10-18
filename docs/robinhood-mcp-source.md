@@ -9,6 +9,8 @@ TradeGate treats Robinhood MCP as a **proposal-only public-source feed**. It is 
 - TradeGate must not submit any order or call a live/paper brokerage mutation endpoint.
 - Future execution requires a separate explicit approval after at least 30 audited proposal-only dry runs.
 - The emergency kill switch lives at `POST /api/robinhood/kill-switch` and blocks new proposals while active.
+- Proposal and kill-switch APIs require an authenticated command-center session.
+- Runtime state persists under `GMAOS_DATA_DIR` (`/data` in Docker, `./data` locally).
 
 ## Proposal card contract
 
@@ -30,7 +32,7 @@ The API rejects expired proposals, missing stop/max-loss fields, market orders, 
 
 ## Stored record
 
-Accepted proposals are appended to `data/robinhood-proposals.jsonl` with:
+Accepted proposals are appended to `robinhood-proposals.jsonl` under `GMAOS_DATA_DIR` with:
 
 - `status: proposal_only`
 - `execution: blocked_until_future_explicit_approval`
