@@ -1,0 +1,31 @@
+connector:
+  id: robinhood_mcp
+  name: Robinhood MCP proposal feed
+  mode: proposal_only
+  execution_enabled: false
+  credential_collection: forbidden
+  supported_asset_classes: [equity]
+  blocked_asset_classes: [options, futures, crypto, margin, lending]
+  blocked_order_types: [market]
+  required_proposal_fields:
+    - symbol
+    - side
+    - asset_class
+    - order_type
+    - quantity
+    - limit_price
+    - stop_loss
+    - max_loss_usd
+    - expires_at
+    - thesis
+  limits:
+    proposal_ttl_seconds: 86400
+    max_notional_usd: 1000
+    min_dry_run_proposals_before_execution_review: 30
+  risk_review_checklist:
+    - Confirm public source is reachable and timestamped.
+    - Confirm symbol and asset class are supported.
+    - Confirm limit price, stop loss, and max loss are present.
+    - Confirm proposal is not expired.
+    - Confirm no credential or account identifier is stored.
+    - Confirm no execution is attempted without future explicit approval.
