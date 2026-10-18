@@ -61,6 +61,33 @@ class Fill:
     pnl: float = 0.0
 
 
+def _fill_from_record(rec: dict) -> Fill:
+    """Rebuild a Fill from one JSONL ledger line (``asdict`` output)."""
+    d = dict(rec)
+    if not isinstance(d.get("side"), Side):
+        d["side"] = Side(d["side"])
+    d.pop("strategy", None)  # not a Fill field; tolerate extra keys
+    return Fill(**{k: v for k, v in d.items() if k in Fill.__dataclass_fields__})
+
+
+def load_ledger(path: Path) -> list[Fill]:
+    """Restore recorded fills from a ledger file. Corrupt lines are
+    skipped — a torn write at crash time must not poison recovery."""
+    out: list[Fill] = []
+    p = Path(path)
+    if not p.exists():
+        return out
+    for line in p.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(_fill_from_record(json.loads(line)))
+        except (ValueError, TypeError, KeyError):
+            continue
+    return out
+
+
 class Broker(Protocol):
     async def submit(self, order: Order, ref_price: float) -> Fill | None: ...
     async def on_tick(self, tick: Tick) -> list[Fill]: ...
@@ -88,6 +115,9 @@ class PaperBroker:
         self.ledger_path = Path(ledger_path) if ledger_path else None
         if self.ledger_path:
             self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
+            # Restart recovery: prior fills survive a process restart so
+            # stats and realized equity continue, not reset to zero.
+            self.fills.extend(load_ledger(self.ledger_path))
 
     def _record(self, fill: Fill) -> None:
         self.fills.append(fill)
