@@ -1,0 +1,122 @@
+[
+  {
+    "run_at": "2026-10-20T00:33:20.624877+00:00",
+    "capital": 10000.0,
+    "config_version": 1,
+    "symbols": [
+      {
+        "symbol": "SPY",
+        "bars": 250,
+        "window": {
+          "from": "2025-10-20",
+          "to": "2026-10-16"
+        },
+        "strategy": {
+          "trades": 28,
+          "net_pnl": 3.8621830458151303,
+          "roi": 0.000386218304581513,
+          "win_rate": 0.32142857142857145,
+          "max_drawdown": 0.004389907171401197,
+          "profit_factor": 1.0394548886633597,
+          "sharpe": 0.08037475513187593,
+          "avg_win": 11.305640396157237,
+          "avg_loss": 5.152030553663157
+        },
+        "buy_hold_roi": 0.136973,
+        "beats_benchmark": false
+      },
+      {
+        "symbol": "QQQ",
+        "bars": 250,
+        "window": {
+          "from": "2025-10-20",
+          "to": "2026-10-16"
+        },
+        "strategy": {
+          "trades": 29,
+          "net_pnl": -6.377562352705503,
+          "roi": -0.0006377562352705503,
+          "win_rate": 0.3103448275862069,
+          "max_drawdown": 0.00571204668606895,
+          "profit_factor": 0.9502119557984019,
+          "sharpe": -0.10599064497176704,
+          "avg_win": 13.524076788512863,
+          "avg_loss": 6.404712672466064
+        },
+        "buy_hold_roi": 0.160676,
+        "beats_benchmark": false
+      },
+      {
+        "symbol": "AAPL",
+        "bars": 250,
+        "window": {
+          "from": "2025-10-20",
+          "to": "2026-10-16"
+        },
+        "strategy": {
+          "trades": 27,
+          "net_pnl": 84.30598232051022,
+          "roi": 0.008430598232051022,
+          "win_rate": 0.4444444444444444,
+          "max_drawdown": 0.005075955579668778,
+          "profit_factor": 1.5334607366823965,
+          "sharpe": 0.8916044985517138,
+          "avg_win": 20.19516227816146,
+          "avg_loss": 10.535731001161821
+        },
+        "buy_hold_roi": 0.309716,
+        "beats_benchmark": false
+      },
+      {
+        "symbol": "MSFT",
+        "bars": 250,
+        "window": {
+          "from": "2025-10-20",
+          "to": "2026-10-16"
+        },
+        "strategy": {
+          "trades": 30,
+          "net_pnl": 7.468489124843707,
+          "roi": 0.0007468489124843707,
+          "win_rate": 0.3333333333333333,
+          "max_drawdown": 0.01229320982686366,
+          "profit_factor": 1.0330668796533387,
+          "sharpe": 0.07013986214370632,
+          "avg_win": 23.332860060620224,
+          "avg_loss": 11.293005574067923
+        },
+        "buy_hold_roi": 0.023723,
+        "beats_benchmark": false
+      },
+      {
+        "symbol": "NVDA",
+        "bars": 250,
+        "window": {
+          "from": "2025-10-20",
+          "to": "2026-10-16"
+        },
+        "strategy": {
+          "trades": 29,
+          "net_pnl": 114.64382863371843,
+          "roi": 0.011464382863371843,
+          "win_rate": 0.41379310344827586,
+          "max_drawdown": 0.005844457385939195,
+          "profit_factor": 1.5136120908544455,
+          "sharpe": 0.9433062308283288,
+          "avg_win": 28.15456259884816,
+          "avg_loss": 13.130054267791735
+        },
+        "buy_hold_roi": 0.172416,
+        "beats_benchmark": false
+      }
+    ],
+    "summary": {
+      "symbols_ok": 5,
+      "total_trades": 143,
+      "mean_strategy_roi": 0.004078058415443639,
+      "mean_benchmark_roi": 0.16070080000000003,
+      "beat_benchmark_count": 0,
+      "edge_vs_benchmark": -0.156623
+    }
+  }
+]
