@@ -3,7 +3,7 @@ import json
 from runtime.tradegate.dip_paper import run_dip_paper
 from runtime.tradegate.dipbuy import DipConfig
 
-CFG = DipConfig(universe=("A", "B"), trend_sma=20, exit_sma=5)
+CFG = DipConfig(universe=("A", "B"), trend_sma=20, exit_rsi=80.0)
 TODAY = "2025-02-05"  # day after the last bar (32 bars → 2025-02-04)
 
 
