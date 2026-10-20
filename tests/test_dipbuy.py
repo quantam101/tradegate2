@@ -2,7 +2,7 @@ import pytest
 
 from runtime.tradegate.dipbuy import DipConfig, rsi, run_dipbuy, signal
 
-CFG = DipConfig(universe=("A",), trend_sma=20, exit_sma=5, cost_bps=0.0)
+CFG = DipConfig(universe=("A",), trend_sma=20, exit_rsi=80.0, cost_bps=0.0)
 
 
 def _bars(closes):
@@ -24,9 +24,13 @@ def test_buys_sharp_dip_in_uptrend_only():
     assert signal(down, holding=False, cfg=CFG) is None  # below trend: no dip buy
 
 
-def test_sells_when_back_above_short_average():
-    closes = [100 + i for i in range(30)] + [120, 125, 131]
+def test_sells_when_rsi_recovers_above_exit_band():
+    # strong two-day rebound → RSI(2) = 100 > exit_rsi
+    closes = [100 + i for i in range(30)] + [110, 115, 120]
     assert signal(closes, holding=True, cfg=CFG) == "sell"
+    # still sliding → RSI stays low, no exit
+    weak = closes + [119, 118]
+    assert signal(weak, holding=True, cfg=CFG) is None
 
 
 def test_round_trip_fills_next_open_and_profits_from_bounce():
@@ -44,7 +48,7 @@ def test_round_trip_fills_next_open_and_profits_from_bounce():
 def test_costs_reduce_result_and_slots_are_equal():
     closes = [100 + i for i in range(30)] + [126, 122, 124, 128, 133, 134]
     data = {"A": _bars(closes), "B": _bars([50 + i * 0.1 for i in range(36)])}
-    two = DipConfig(universe=("A", "B"), trend_sma=20, exit_sma=5, cost_bps=0.0)
+    two = DipConfig(universe=("A", "B"), trend_sma=20, exit_rsi=80.0, cost_bps=0.0)
     free = run_dipbuy(data, two, 1000.0)
     paid = run_dipbuy(data, DipConfig(**{**two.to_dict(), "universe": ("A", "B"),
                                          "cost_bps": 50.0}), 1000.0)

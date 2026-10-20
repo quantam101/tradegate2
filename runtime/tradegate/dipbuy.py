@@ -6,7 +6,11 @@ rotation study showed tuning is overfitting):
 * **Enter** a symbol at the next open when its close is above its 200-day
   SMA (only buy dips in uptrends) and its 2-day RSI is below 10 (a sharp
   two-day sell-off).
-* **Exit** at the next open once the close is back above its 5-day SMA.
+* **Exit** at the next open once the 2-day RSI recovers above
+  ``exit_rsi`` (default 80 — exit on strength, the other published
+  Connors variant). Exiting on RSI recovery rather than the 5-day SMA
+  captures more of the bounce per trade; the SMA(5) version captured so
+  little that the edge went negative at 20bps cost.
 * Capital is split into equal slots, one per symbol, so a single dip can't
   take the whole account. Idle slots sit in cash.
 
@@ -29,7 +33,7 @@ class DipConfig:
     rsi_period: int = 2
     rsi_entry: float = 10.0
     trend_sma: int = 200
-    exit_sma: int = 5
+    exit_rsi: float = 80.0
     cost_bps: float = 5.0
 
     def to_dict(self) -> dict:
@@ -54,13 +58,15 @@ def rsi(closes: list[float], period: int) -> float | None:
 
 def signal(closes: list[float], holding: bool, cfg: DipConfig) -> str | None:
     """'buy', 'sell' or None from closes through today."""
-    if len(closes) < max(cfg.trend_sma, cfg.exit_sma, cfg.rsi_period + 1):
+    if len(closes) < max(cfg.trend_sma, cfg.rsi_period + 1):
+        return None
+    r = rsi(closes, cfg.rsi_period)
+    if r is None:
         return None
     if holding:
-        return "sell" if closes[-1] > sum(closes[-cfg.exit_sma:]) / cfg.exit_sma else None
+        return "sell" if r > cfg.exit_rsi else None
     trend = sum(closes[-cfg.trend_sma:]) / cfg.trend_sma
-    r = rsi(closes, cfg.rsi_period)
-    if closes[-1] > trend and r is not None and r < cfg.rsi_entry:
+    if closes[-1] > trend and r < cfg.rsi_entry:
         return "buy"
     return None
 
