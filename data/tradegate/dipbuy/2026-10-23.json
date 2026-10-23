@@ -19,5 +19,30 @@
     "data_errors": {},
     "executed": false,
     "signals": {}
+  },
+  {
+    "run_at": "2026-10-23T23:56:58.657091+00:00",
+    "asof": "2026-10-23",
+    "capital": 1000.0,
+    "config": {
+      "universe": [
+        "SPY",
+        "QQQ",
+        "IWM",
+        "IBIT"
+      ],
+      "rsi_period": 2,
+      "rsi_entry": 10.0,
+      "trend_sma": 200,
+      "exit_rsi": 80.0,
+      "cost_bps": 5.0
+    },
+    "data_errors": {},
+    "executed": false,
+    "signals": {
+      "SPY": "buy",
+      "QQQ": "buy",
+      "IBIT": "buy"
+    }
   }
 ]
