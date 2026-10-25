@@ -18,6 +18,10 @@ data/
 !/data/tradegate/rotation/
 !/data/tradegate/dipbuy/
 !/data/tradegate/truth/
+# Static connector feed descriptors are source config, not runtime data.
+!/data/feeds/
+/data/feeds/*
+!/data/feeds/robinhood-mcp-trading.json
 *.sqlite3
 backups/
 .env
