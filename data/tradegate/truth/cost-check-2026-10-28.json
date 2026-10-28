@@ -1,0 +1,94 @@
+{
+  "run_at": "2026-10-28T00:44:03.836745+00:00",
+  "capital": 1000.0,
+  "strategies": {
+    "rotation": {
+      "window": {
+        "from": "2024-10-28",
+        "to": "2026-10-26"
+      },
+      "buy_hold_roi": 0.13851183474449652,
+      "by_cost_bps": {
+        "5": {
+          "start_value": 1000.0,
+          "end_value": 1146.46,
+          "net_pnl": 146.46,
+          "roi": 0.1464581830007594,
+          "max_drawdown": 0.09042163837523542,
+          "sharpe": 0.7256537523545602,
+          "round_trips": 34,
+          "win_rate": 0.7352941176470589,
+          "trades": 67,
+          "edge_survives": true
+        },
+        "10": {
+          "start_value": 1000.0,
+          "end_value": 1140.53,
+          "net_pnl": 140.53,
+          "roi": 0.14053076700247846,
+          "max_drawdown": 0.09084080248495718,
+          "sharpe": 0.700276829313921,
+          "round_trips": 34,
+          "win_rate": 0.7352941176470589,
+          "trades": 67,
+          "edge_survives": true
+        },
+        "20": {
+          "start_value": 1000.0,
+          "end_value": 1128.77,
+          "net_pnl": 128.77,
+          "roi": 0.12876924975432624,
+          "max_drawdown": 0.09167776439759279,
+          "sharpe": 0.6492084045348288,
+          "round_trips": 34,
+          "win_rate": 0.7352941176470589,
+          "trades": 67,
+          "edge_survives": true
+        }
+      }
+    },
+    "dipbuy": {
+      "window": {
+        "from": "2024-10-28",
+        "to": "2026-10-26"
+      },
+      "by_cost_bps": {
+        "5": {
+          "start_value": 1000.0,
+          "end_value": 1128.95,
+          "net_pnl": 128.95,
+          "roi": 0.12894884792970962,
+          "max_drawdown": 0.029211240902184632,
+          "sharpe": 0.9293520866664815,
+          "round_trips": 116,
+          "win_rate": 0.6206896551724138,
+          "edge_survives": true
+        },
+        "10": {
+          "start_value": 1000.0,
+          "end_value": 1095.41,
+          "net_pnl": 95.41,
+          "roi": 0.09540914724284955,
+          "max_drawdown": 0.030590545163439398,
+          "sharpe": 0.7067612866911749,
+          "round_trips": 116,
+          "win_rate": 0.5948275862068966,
+          "edge_survives": true
+        },
+        "20": {
+          "start_value": 1000.0,
+          "end_value": 1031.6,
+          "net_pnl": 31.6,
+          "roi": 0.03159803811700912,
+          "max_drawdown": 0.03334140783286221,
+          "sharpe": 0.26337805009594256,
+          "round_trips": 116,
+          "win_rate": 0.5258620689655172,
+          "edge_survives": true
+        }
+      }
+    }
+  },
+  "errors": {},
+  "survives_at_max_cost": true
+}
