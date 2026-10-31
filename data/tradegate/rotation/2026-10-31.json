@@ -1,0 +1,25 @@
+[
+  {
+    "run_at": "2026-10-31T00:58:26.926321+00:00",
+    "asof": "2026-10-29",
+    "capital": 1000.0,
+    "config": {
+      "lookback": 189,
+      "top_k": 4,
+      "sma": 100,
+      "use_sma": true,
+      "abs_momentum": true,
+      "rebalance_every": 21,
+      "inverse_vol": true,
+      "vol_window": 63,
+      "cost_bps": 5.0,
+      "max_stale_bars": 5,
+      "target_vol": 0.0,
+      "max_exposure": 1.0,
+      "rank_by": "return"
+    },
+    "data_errors": {},
+    "executed": false,
+    "rebalance_day": false
+  }
+]
