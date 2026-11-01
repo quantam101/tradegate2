@@ -48,7 +48,8 @@ class TradeGateOrchestrator:
         self.store = store or ConfigStore()
         self.initial_capital = initial_capital
         self.equity = initial_capital
-        self.broker = broker or PaperBroker(ledger_path=ledger_path)
+        self.broker = broker or PaperBroker(ledger_path=ledger_path,
+                                    slippage_bps=self.store.snapshot().fill_slippage_bps)
         # Realized-equity breaker: flatten fires the tick a loss breaches
         # the limit, even with no new signal in flight.
         self.broker.equity_ref = lambda: self.equity

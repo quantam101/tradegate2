@@ -121,7 +121,8 @@ def _f_risk(q, store, shared):
 def _f_exec(q, store, shared):
     from .agents import ExecutionAgent
     from .broker import PaperBroker
-    broker = PaperBroker(ledger_path=Path("data/tradegate/proc_fills.jsonl"))
+    broker = PaperBroker(ledger_path=Path("data/tradegate/proc_fills.jsonl"),
+                         slippage_bps=store.snapshot().fill_slippage_bps)
     broker.equity_ref = lambda: shared["equity"].value
     broker.drawdown_limit_ref = (
         lambda: store.snapshot().max_drawdown_limit)
