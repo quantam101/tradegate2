@@ -116,7 +116,21 @@ async def _run_pipeline(ticks: Iterable[Tick], config: EngineConfig,
 
 def run_backtest(ticks: Iterable[Tick], config: EngineConfig | None = None,
                  initial_capital: float = 1000.0) -> dict:
-    broker = asyncio.run(_run_pipeline(list(ticks),
+    """Replay finite, globally nondecreasing timestamps in supplied order.
+
+    Reject malformed timelines before agents or broker state are created.
+    Equal timestamps are valid for simultaneous market frames. Never sort
+    silently: doing so would hide an upstream data-ordering defect.
+    """
+    frames = list(ticks)
+    previous = float("-inf")
+    for index, tick in enumerate(frames):
+        if not math.isfinite(tick.timestamp) or tick.timestamp < previous:
+            raise ValueError(
+                f"invalid backtest timestamp at index {index}: "
+                "timestamps must be finite and globally nondecreasing")
+        previous = tick.timestamp
+    broker = asyncio.run(_run_pipeline(frames,
                                      config or EngineConfig(),
                                      initial_capital))
     return compute_metrics(initial_capital, broker.fills)
