@@ -61,6 +61,25 @@ class Fill:
     pnl: float = 0.0
 
 
+def round_trip_pnls(fills) -> list[tuple["Fill", float]]:
+    """Pair each exit with its entry and return ``(exit_fill, net_pnl)``.
+
+    The entry fee is booked on the ENTRY fill (``pnl=-fee``) while the exit
+    fee and gross P&L sit on the EXIT fill. Classifying wins from the exit
+    leg alone scores a round trip whose small gain was eaten by the entry
+    fee as a win — inflating win rate and Kelly inputs. Net P&L of a round
+    trip is exit.pnl plus the matching entry's (negative) fee.
+    """
+    entry_fee: dict[str, float] = {}
+    out: list[tuple[Fill, float]] = []
+    for f in fills:
+        if f.kind == "ENTRY":
+            entry_fee[f.order_id] = entry_fee.get(f.order_id, 0.0) + f.pnl
+        elif f.kind.startswith("EXIT"):
+            out.append((f, f.pnl + entry_fee.pop(f.order_id, 0.0)))
+    return out
+
+
 class Broker(Protocol):
     async def submit(self, order: Order, ref_price: float) -> Fill | None: ...
     async def on_tick(self, tick: Tick) -> list[Fill]: ...
@@ -236,14 +255,14 @@ class PaperBroker:
         return out
 
     def stats(self) -> dict:
-        exits = [f for f in self.fills if f.kind.startswith("EXIT")]
-        wins = [f for f in exits if f.pnl > 0]
-        losses = [f for f in exits if f.pnl <= 0]
+        trips = [p for _, p in round_trip_pnls(self.fills)]
+        wins = [p for p in trips if p > 0]
+        losses = [p for p in trips if p <= 0]
         pnl = sum(f.pnl for f in self.fills)
         return {
-            "trades": len(exits),
-            "win_rate": len(wins) / len(exits) if exits else 0.0,
-            "avg_win": sum(f.pnl for f in wins) / len(wins) if wins else 0.0,
-            "avg_loss": abs(sum(f.pnl for f in losses) / len(losses)) if losses else 0.0,
+            "trades": len(trips),
+            "win_rate": len(wins) / len(trips) if trips else 0.0,
+            "avg_win": sum(wins) / len(wins) if wins else 0.0,
+            "avg_loss": abs(sum(losses) / len(losses)) if losses else 0.0,
             "net_pnl": pnl,
         }
