@@ -37,21 +37,33 @@ def main(argv=None):
         windows = walk_forward_windows(ticks)
         base = EngineConfig()
 
-        def objective(params):
-            cfg = EngineConfig(**{**base.to_dict(), **params})
-            scores, reports = [], []
-            for train, test in windows:
-                m = run_backtest(test, cfg)
-                reports.append(m)
-                scores.append(score(m, cfg, min_trades=5))
-            return sum(scores) / len(scores), reports
+        heldout_reports = []
+        total_trials = 0
+        for train, test in windows:
+            def objective(params):
+                cfg = EngineConfig(**{**base.to_dict(), **params})
+                metrics = run_backtest(train, cfg)
+                return score(metrics, cfg, min_trades=5), metrics
 
-        best_score, best, trials = tpe_search(objective, n_trials=16)
+            training_score, best, trials = tpe_search(objective, n_trials=16)
+            total_trials += len(trials)
+            cfg = EngineConfig(**{**base.to_dict(), **best})
+            # Evaluate the selected parameters once; never feed this result
+            # back into search or use it to choose the deployed parameters.
+            heldout_reports.append({
+                "training_score": training_score,
+                "params": best,
+                "metrics": run_backtest(test, cfg),
+                "train_end": train[-1].timestamp,
+                "test_start": test[0].timestamp,
+            })
         out = Path("data/tradegate/engine_manifest.json")
         store = ConfigStore.from_manifest(out)
+        # Latest window's training winner, not the best holdout performer.
         store.swap(**best)
-        print(json.dumps({"best_score": best_score, "best_params": best,
-                          "trials": len(trials), "manifest": str(out)}, indent=2))
+        print(json.dumps({"best_params": best, "trials": total_trials,
+                          "heldout_reports": heldout_reports,
+                          "manifest": str(out)}, indent=2))
 
     elif mode == "paper":
         import os

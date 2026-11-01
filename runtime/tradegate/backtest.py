@@ -24,24 +24,32 @@ from .config import ConfigStore, EngineConfig
 from .events import MarketEvent, Tick
 
 
-def _equity_curve(initial: float, exits) -> list[float]:
+def _equity_curve(initial: float, fills) -> list[float]:
     eq, curve = initial, []
-    for f in sorted(exits, key=lambda f: f.ts):
+    for f in sorted(fills, key=lambda f: f.ts):
         eq += f.pnl
         curve.append(eq)
     return curve
 
 
 def compute_metrics(initial_capital: float, fills) -> dict:
+    """Realized ledger metrics; Sharpe is trade-based, not annualized.
+
+    Entry fees count immediately in equity and total P&L, and are paired
+    by order ID with exits for round-trip win/loss statistics. Open-position
+    market value is not included: drawdown here is realized-equity only.
+    """
+    fills = list(fills)
     exits = [f for f in fills if f.kind.startswith("EXIT")]
-    if not exits:
-        return {"trades": 0, "net_pnl": 0.0, "roi": 0.0, "win_rate": 0.0,
-                "max_drawdown": 0.0, "profit_factor": 0.0, "sharpe": 0.0,
-                "avg_win": 0.0, "avg_loss": 0.0}
-    pnls = [f.pnl for f in exits]
+    entry_pnls = {}
+    for fill in fills:
+        if fill.kind == "ENTRY":
+            entry_pnls[fill.order_id] = entry_pnls.get(fill.order_id, 0.0) + fill.pnl
+    pnls = [f.pnl + entry_pnls.pop(f.order_id, 0.0) for f in exits]
     wins = [p for p in pnls if p > 0]
     losses = [p for p in pnls if p <= 0]
-    curve = _equity_curve(initial_capital, exits)
+    net_pnl = sum(f.pnl for f in fills)
+    curve = _equity_curve(initial_capital, fills)
     peak, max_dd = initial_capital, 0.0
     for eq in curve:
         peak = max(peak, eq)
@@ -50,11 +58,11 @@ def compute_metrics(initial_capital: float, fills) -> dict:
               if len(pnls) > 1 and statistics.pstdev(pnls) > 0 else 0.0)
     return {
         "trades": len(exits),
-        "net_pnl": sum(pnls),
-        "roi": sum(pnls) / initial_capital,
-        "win_rate": len(wins) / len(exits),
+        "net_pnl": net_pnl,
+        "roi": net_pnl / initial_capital,
+        "win_rate": len(wins) / len(exits) if exits else 0.0,
         "max_drawdown": max_dd,
-        "profit_factor": (sum(wins) / abs(sum(losses))) if losses and sum(losses) else float("inf"),
+        "profit_factor": (sum(wins) / abs(sum(losses))) if losses and sum(losses) else (float("inf") if wins else 0.0),
         "sharpe": sharpe,
         "avg_win": sum(wins) / len(wins) if wins else 0.0,
         "avg_loss": abs(sum(losses) / len(losses)) if losses else 0.0,
@@ -116,7 +124,21 @@ async def _run_pipeline(ticks: Iterable[Tick], config: EngineConfig,
 
 def run_backtest(ticks: Iterable[Tick], config: EngineConfig | None = None,
                  initial_capital: float = 1000.0) -> dict:
-    broker = asyncio.run(_run_pipeline(list(ticks),
+    """Replay finite, globally nondecreasing timestamps in supplied order.
+
+    Reject malformed timelines before agents or broker state are created.
+    Equal timestamps are valid for simultaneous market frames. Never sort
+    silently: doing so would hide an upstream data-ordering defect.
+    """
+    frames = list(ticks)
+    previous = float("-inf")
+    for index, tick in enumerate(frames):
+        if not math.isfinite(tick.timestamp) or tick.timestamp < previous:
+            raise ValueError(
+                f"invalid backtest timestamp at index {index}: "
+                "timestamps must be finite and globally nondecreasing")
+        previous = tick.timestamp
+    broker = asyncio.run(_run_pipeline(frames,
                                      config or EngineConfig(),
                                      initial_capital))
     return compute_metrics(initial_capital, broker.fills)
