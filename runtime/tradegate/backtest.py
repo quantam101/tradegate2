@@ -19,29 +19,33 @@ from .agents import (
     RegimeAgent,
     RiskAgent,
 )
-from .broker import PaperBroker
+from .broker import PaperBroker, round_trip_pnls
 from .config import ConfigStore, EngineConfig
 from .events import MarketEvent, Tick
 
 
-def _equity_curve(initial: float, exits) -> list[float]:
+def _equity_curve(initial: float, trips) -> list[float]:
     eq, curve = initial, []
-    for f in sorted(exits, key=lambda f: f.ts):
-        eq += f.pnl
+    for f, pnl in sorted(trips, key=lambda t: t[0].ts):
+        eq += pnl
         curve.append(eq)
     return curve
 
 
 def compute_metrics(initial_capital: float, fills) -> dict:
-    exits = [f for f in fills if f.kind.startswith("EXIT")]
-    if not exits:
+    fills = list(fills)
+    # Net per round trip: exit leg + its entry fee (see round_trip_pnls).
+    trips = round_trip_pnls(fills)
+    if not trips:
         return {"trades": 0, "net_pnl": 0.0, "roi": 0.0, "win_rate": 0.0,
                 "max_drawdown": 0.0, "profit_factor": 0.0, "sharpe": 0.0,
                 "avg_win": 0.0, "avg_loss": 0.0}
-    pnls = [f.pnl for f in exits]
+    pnls = [p for _, p in trips]
     wins = [p for p in pnls if p > 0]
     losses = [p for p in pnls if p <= 0]
-    curve = _equity_curve(initial_capital, exits)
+    # Fees paid on still-open entries are real costs too.
+    net = sum(f.pnl for f in fills)
+    curve = _equity_curve(initial_capital, trips)
     peak, max_dd = initial_capital, 0.0
     for eq in curve:
         peak = max(peak, eq)
@@ -49,10 +53,10 @@ def compute_metrics(initial_capital: float, fills) -> dict:
     sharpe = (statistics.mean(pnls) / statistics.pstdev(pnls) * math.sqrt(len(pnls))
               if len(pnls) > 1 and statistics.pstdev(pnls) > 0 else 0.0)
     return {
-        "trades": len(exits),
-        "net_pnl": sum(pnls),
-        "roi": sum(pnls) / initial_capital,
-        "win_rate": len(wins) / len(exits),
+        "trades": len(trips),
+        "net_pnl": net,
+        "roi": net / initial_capital,
+        "win_rate": len(wins) / len(trips),
         "max_drawdown": max_dd,
         "profit_factor": (sum(wins) / abs(sum(losses))) if losses and sum(losses) else float("inf"),
         "sharpe": sharpe,
