@@ -262,3 +262,28 @@ def test_alpaca_trade_to_tick_honest_conversion():
     assert t4.volume_delta == -30.0
     assert t3.symbol == "QQQ" and t3.volume_delta == 0.0
     assert t2.bids_depth == 1.0 and t2.asks_depth == 1.0
+
+
+def test_paper_broker_slippage_is_adverse():
+    # Entry buys above ref, stop sells below the level, TP fills at limit.
+    broker = PaperBroker(fee_bps=0, slippage_bps=50)
+    order = Order("X", Side.BUY, Strategy.ALPHA_MOMENTUM, 100.0, 90.0, 200.0, 0, 30)
+    asyncio.run(broker.submit(order, 100.0))
+    assert broker.positions["X"].entry_price == pytest.approx(100.5)
+    fills = asyncio.run(broker.on_tick(
+        Tick("X", 1, 95, 94, 96, 0, 0, 0, high=96, low=89.0)))
+    assert fills[0].kind == "EXIT_STOP" and fills[0].price == pytest.approx(89.55)
+
+    broker2 = PaperBroker(fee_bps=0, slippage_bps=50)
+    order2 = Order("X", Side.BUY, Strategy.ALPHA_MOMENTUM, 100.0, 90.0, 110.0, 0, 30)
+    asyncio.run(broker2.submit(order2, 100.0))
+    fills2 = asyncio.run(broker2.on_tick(
+        Tick("X", 1, 112, 111, 113, 0, 0, 0, high=112, low=95)))
+    assert fills2[0].kind == "EXIT_TP" and fills2[0].price == pytest.approx(110.0)
+
+
+def test_paper_broker_zero_slippage_unchanged():
+    broker = PaperBroker(fee_bps=0, slippage_bps=0)
+    order = Order("X", Side.BUY, Strategy.ALPHA_MOMENTUM, 100.0, 90.0, 200.0, 0, 30)
+    asyncio.run(broker.submit(order, 100.0))
+    assert broker.positions["X"].entry_price == 100.0

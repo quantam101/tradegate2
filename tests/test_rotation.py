@@ -143,7 +143,10 @@ def _noisy(sym, n, drift, amp, seed):
 def test_vol_target_scales_down_volatile_basket_and_never_levers():
     hist = {"WILD": _noisy("WILD", 60, 0.004, 0.05, 1),
             "CALM": _noisy("CALM", 60, 0.002, 0.002, 2)}
-    cfg = RotationConfig(**{**CFG.to_dict(), "target_vol": 0.10})
+    # inverse_vol off so the volatile leg keeps half the weight — otherwise
+    # the calm asset dominates and the basket stays under target_vol.
+    cfg = RotationConfig(**{**CFG.to_dict(), "target_vol": 0.10,
+                          "inverse_vol": False})
     w = _target_weights(hist, cfg)
     assert 0 < sum(w.values()) < 1.0
     calm = _target_weights({"CALM": hist["CALM"]},

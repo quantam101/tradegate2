@@ -79,15 +79,25 @@ class PaperBroker:
     at close. Trailing stop ratchets with new highs.
     """
 
-    def __init__(self, ledger_path: Path | None = None, fee_bps: float = 1.0):
+    def __init__(self, ledger_path: Path | None = None, fee_bps: float = 1.0,
+                 slippage_bps: float = 0.0):
         self.last_px = {}
         self.positions: dict[str, Position] = {}
         self.resting: dict[str, Order] = {}
         self.fills: list[Fill] = []
         self.fee_bps = fee_bps
+        # Adverse slippage applied to market-order fills (entries, stop and
+        # EOD exits). Take-profit exits are resting limits and fill at the
+        # limit or better, so they are not slipped.
+        self.slippage_bps = slippage_bps
+
         self.ledger_path = Path(ledger_path) if ledger_path else None
         if self.ledger_path:
             self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _slip(self, price: float, side: Side, buying: bool) -> float:
+        frac = self.slippage_bps / 1e4
+        return price * (1 + frac) if buying else price * (1 - frac)
 
     def _record(self, fill: Fill) -> None:
         self.fills.append(fill)
@@ -101,18 +111,19 @@ class PaperBroker:
         self.last_px[order.symbol] = ref_price
         if order.symbol in self.positions:
             return None  # one position per symbol
-        qty = order.capital / ref_price
+        fill_px = self._slip(ref_price, order.side, order.side == Side.BUY)
+        qty = order.capital / fill_px
         fee = order.capital * self.fee_bps / 1e4
         pos = Position(
             symbol=order.symbol, side=order.side, qty=qty,
-            entry_price=ref_price, entry_ts=order.placed_ts,
+            entry_price=fill_px, entry_ts=order.placed_ts,
             stop_price=order.stop_price, take_profit=order.take_profit,
             strategy=order.strategy, order_id=order.order_id,
-            atr_offset=ref_price - order.stop_price,
+            atr_offset=fill_px - order.stop_price,
         )
         self.positions[order.symbol] = pos
         fill = Fill(order_id=order.order_id, symbol=order.symbol,
-                    side=order.side, qty=qty, price=ref_price,
+                    side=order.side, qty=qty, price=fill_px,
                     ts=order.placed_ts, kind="ENTRY", pnl=-fee)
         self._record(fill)
         return fill
@@ -185,7 +196,6 @@ class PaperBroker:
     max_drawdown_limit = 0.0
     breaker_tripped = False
     _breaker_peak = None
-    last_px: dict = {}
 
     def cancel_all(self) -> int:
         """Kill-switch: drop every resting (unfilled) order. Returns count."""
@@ -194,6 +204,10 @@ class PaperBroker:
         return n
 
     def _exit(self, pos: Position, price: float, ts: float, kind: str) -> Fill:
+        # Stops and EOD flattens are market orders — they slip against us.
+        # Take-profit is a resting limit: never fills below the limit.
+        if kind != "EXIT_TP":
+            price = self._slip(price, pos.side, pos.side != Side.BUY)
         gross = (price - pos.entry_price) * pos.qty
         fee = price * pos.qty * self.fee_bps / 1e4
         fill = Fill(order_id=pos.order_id, symbol=pos.symbol, side=pos.side,

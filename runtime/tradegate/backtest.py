@@ -66,7 +66,7 @@ async def _run_pipeline(ticks: Iterable[Tick], config: EngineConfig,
     """Wire Agents 2–7 over queues exactly as the live orchestrator does,
     minus ingestion (ticks supplied directly) and telemetry (no-op)."""
     store = ConfigStore(config)
-    broker = PaperBroker()
+    broker = PaperBroker(slippage_bps=config.fill_slippage_bps)
     equity = {"v": initial_capital}
     broker.equity_ref = lambda: equity["v"]
     broker.max_drawdown_limit = config.max_drawdown_limit

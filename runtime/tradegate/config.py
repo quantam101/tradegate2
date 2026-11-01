@@ -38,6 +38,7 @@ class EngineConfig:
     # ── Governance layer (spec: fat-finger guardrails, consensus, latency) ──
     max_notional_usd: float = 20_000_000.0   # absolute per-order notional cap
     max_slippage_bps: float = 40.0           # max deviation vs mid, basis points
+    fill_slippage_bps: float = 5.0           # adverse slippage modeled on market fills
     consensus_threshold_usd: float = 2_000_000.0  # orders above need quorum
     consensus_min_votes: int = 3             # of the 4 voting agents
     consensus_min_score: float = 0.82        # min mean confidence across votes
