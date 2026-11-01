@@ -8,6 +8,7 @@ placeholder — the objective here is the real replay backtester.
 
 from __future__ import annotations
 
+import math
 import random
 from collections.abc import Callable
 
@@ -60,10 +61,27 @@ def walk_forward_windows(ticks: list, n_windows: int = 3,
                          train_frac: float = 0.7) -> list[tuple]:
     """Split an ordered tick list into rolling (train, test) windows —
     out-of-sample evaluation, not curve-fitting on one period."""
+    if isinstance(n_windows, bool) or not isinstance(n_windows, int) or n_windows < 1:
+        raise ValueError("n_windows must be a positive integer")
+    if not math.isfinite(train_frac) or not 0 < train_frac < 1:
+        raise ValueError("train_frac must be finite and between 0 and 1")
+    previous = float("-inf")
+    for tick in ticks:
+        if not math.isfinite(tick.timestamp) or tick.timestamp < previous:
+            raise ValueError("timestamps must be finite and globally nondecreasing")
+        previous = tick.timestamp
     w = len(ticks) // (n_windows + 1)
+    if w < 1:
+        raise ValueError("not enough ticks for nonempty train/test windows")
     out = []
     for i in range(n_windows):
         seg = ticks[i * w:(i + 2) * w]
         cut = int(len(seg) * train_frac)
+        # A timestamp group is one information boundary. Put the entire
+        # boundary group in test rather than leaking simultaneous frames.
+        while 0 < cut < len(seg) and seg[cut - 1].timestamp == seg[cut].timestamp:
+            cut -= 1
+        if cut == 0 or cut == len(seg):
+            raise ValueError("cannot split window into nonempty chronological train/test sets")
         out.append((seg[:cut], seg[cut:]))
     return out
