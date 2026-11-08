@@ -16,7 +16,7 @@ paper account tracks the model. Each run:
 
        {date, strategy, model_equity, broker_equity, diff_pct,
         model_positions, broker_positions, positions_match,
-        broker_status, notes}
+        position_value_diff, broker_status, notes}
 
 Honesty rules:
 * Missing credentials → ``broker_status: "no_credentials"`` and
@@ -24,8 +24,9 @@ Honesty rules:
 * A failed broker fetch → ``broker_status: "fetch_error"`` with the
   model-side fields still populated (failover: the ledger never skips
   a day just because Alpaca is unreachable).
-* ``positions_match`` compares symbol *sets* — a notional mismatch is
-  reported via ``position_value_diff`` notes, not hidden.
+* ``positions_match`` compares symbol *sets*; ``model_positions`` and
+  ``broker_positions`` are USD market values, and per-symbol notional
+  differences are recorded in ``position_value_diff``.
 
 CLI: ``python -m runtime.tradegate truth-ledger [--capital 1000]``
 """
@@ -83,27 +84,51 @@ def _fetch_hist(universe: list[str], bars_fn) -> tuple[dict, dict]:
     return hist, errors
 
 
+def _positions_from_trades(trades: list[dict],
+                           hist: dict[str, list[dict]]) -> dict[str, float]:
+    """Net open quantity per symbol from the trade log, marked at each
+    symbol's latest close. The strategy results expose trades, not final
+    holdings, so the truth ledger reconstructs positions from fills."""
+    qty: dict[str, float] = {}
+    for t in trades:
+        if t["side"] == "BUY":
+            qty[t["symbol"]] = qty.get(t["symbol"], 0.0) + float(t["qty"])
+        elif t["side"] == "SELL":
+            qty[t["symbol"]] = qty.get(t["symbol"], 0.0) - float(t["qty"])
+    last_close = {s: b[-1]["close"] for s, b in hist.items() if b}
+    return {s: q * last_close[s] for s, q in qty.items()
+            if q > 1e-9 and s in last_close}
+
+
+def _position_value_diff(model_positions: dict[str, float],
+                         broker_positions: dict[str, float]) -> dict[str, dict]:
+    """USD-value differences for symbols held by both model and broker."""
+    diff: dict[str, dict] = {}
+    for sym in sorted(set(model_positions) & set(broker_positions)):
+        model_value = model_positions[sym]
+        broker_value = broker_positions[sym]
+        if abs(broker_value - model_value) <= 0.01:
+            continue
+        row = {"model": round(model_value, 2), "broker": round(broker_value, 2)}
+        if abs(model_value) > 0.01:
+            row["diff_pct"] = round((broker_value - model_value) / model_value * 100, 4)
+        diff[sym] = row
+    return diff
+
+
 def _model_rotation(hist: dict[str, list[dict]], capital: float,
                     cfg: RotationConfig) -> dict:
     res = run_rotation(hist, cfg, capital)
     return {"equity": res.end_value,
-            "positions": res.holdings[-1][1] if res.holdings else {},
+            "positions": _positions_from_trades(res.trades, hist),
             "roi": res.roi, "trades": len(res.trades)}
 
 
 def _model_dipbuy(hist: dict[str, list[dict]], capital: float,
                   cfg: DipConfig) -> dict:
     res = run_dipbuy(hist, cfg, capital)
-    # DipResult doesn't surface final holdings; recover them from the
-    # trade log (net qty still open at the end of the replay).
-    qty: dict[str, float] = {}
-    for t in res.trades:
-        qty[t["symbol"]] = qty.get(t["symbol"], 0.0) + (
-            t["qty"] if t["side"] == "BUY" else -t["qty"])
-    last_close = {s: b[-1]["close"] for s, b in hist.items() if b}
     return {"equity": res.end_value,
-            "positions": {s: q * last_close[s] for s, q in qty.items()
-                          if q > 1e-9 and s in last_close},
+            "positions": _positions_from_trades(res.trades, hist),
             "roi": res.end_value / capital - 1, "trades": len(res.trades)}
 
 
@@ -118,6 +143,7 @@ def _strategy_record(strategy: str, capital: float, bars_fn,
                     "model_equity": None, "broker_equity": None,
                     "diff_pct": None, "positions_match": None,
                     "model_positions": {}, "broker_positions": {},
+                    "position_value_diff": {},
                     "broker_status": "not_attempted", "notes": notes}
     try:
         hist, errors = _fetch_hist(universe, bars_fn)
@@ -156,6 +182,10 @@ def _strategy_record(strategy: str, capital: float, bars_fn,
     model_syms = set(model["positions"])
     broker_syms = set(snap["positions"])
     record["positions_match"] = model_syms == broker_syms
+    value_diffs = _position_value_diff(model["positions"], snap["positions"])
+    record["position_value_diff"] = value_diffs
+    if value_diffs:
+        notes.append("position value diffs: " + ", ".join(sorted(value_diffs)))
     if not record["positions_match"]:
         notes.append(
             f"symbol mismatch — only-model: {sorted(model_syms - broker_syms)}, "

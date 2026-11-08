@@ -7,6 +7,7 @@ import pytest
 
 from runtime.tradegate.daily import run_daily
 from runtime.tradegate.daily_feed import (
+    Bar,
     DailyBarsFeed,
     bars_to_ticks,
     buy_hold_return,
@@ -104,13 +105,28 @@ def test_run_daily_writes_ledger(monkeypatch, tmp_path):
     assert "buy_hold_roi" in stored[0]["symbols"][0]
 
 
-def test_run_daily_handles_fetch_failure(monkeypatch, tmp_path):
+def test_run_daily_fails_when_no_symbol_data(monkeypatch, tmp_path):
     def boom(*a, **k):
         raise OSError("no network")
     monkeypatch.setattr("urllib.request.urlopen", boom)
-    report = run_daily(["BAD"], ledger_dir=tmp_path)
-    assert report["symbols"][0]["error"]
-    assert report["summary"]["symbols_ok"] == 0
+    with pytest.raises(RuntimeError, match="no daily bars"):
+        run_daily(["BAD"], ledger_dir=tmp_path)
+    assert not list(tmp_path.glob("*.json"))
+
+
+def test_run_daily_writes_partial_ledger_on_symbol_failure(monkeypatch, tmp_path):
+    def fake_fetch(symbol, range_="1y"):
+        if symbol == "BAD":
+            raise OSError("no network")
+        return [Bar(ts=1700000000 + i * 86400, open=100 + i * 0.5,
+                    high=100 + i * 0.5, low=100 + i * 0.5, close=100 + i * 0.5,
+                    volume=1e6) for i in range(60)]
+
+    monkeypatch.setattr("runtime.tradegate.daily.fetch_bars", fake_fetch)
+    report = run_daily(["SPY", "BAD"], ledger_dir=tmp_path)
+    assert report["summary"]["symbols_ok"] == 1
+    assert report["symbols"][1]["symbol"] == "BAD" and report["symbols"][1]["error"]
+    assert len(list(tmp_path.glob("*.json"))) == 1
 
 
 # ── Alpaca paper broker ────────────────────────────────────────────────
