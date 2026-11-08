@@ -50,15 +50,18 @@ connectors:
     permissions: [read_account_status, read_payment_status]
     status_url: /api/workmarket/status
     notes: >
-      WorkMarket (ADP) has no public mutation API. WORKMARKET_API_TOKEN and
-      WORKMARKET_COMPANY_ID must be set in server env vars.
-
-  workmarket_adp:
-    state: payment_integration
-    enabled: true
-    permissions: [read_account_status, read_payment_status]
-    status_url: /api/workmarket/status
-    notes: >
       WorkMarket (ADP) has no public mutation API — all writes go through
       workmarket.com directly. WORKMARKET_API_TOKEN and WORKMARKET_COMPANY_ID
       must be set in server env vars.
+  robinhood_mcp:
+    state: proposal_only
+    enabled: true
+    permissions: [read_public_sources, create_trade_proposal]
+    status_url: /api/robinhood/proposals
+    proposal_contract: connectors/robinhood-mcp.yaml
+    execution_enabled: false
+    kill_switch_url: /api/robinhood/kill-switch
+    notes: >
+      Proposal-only brokerage feed. No credentials are collected, no orders
+      are submitted, and future execution requires a separate explicit
+      approval after 30 audited dry-run proposals.

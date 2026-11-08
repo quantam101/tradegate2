@@ -1,0 +1,20 @@
+{
+  "source_id": "robinhood_mcp",
+  "endpoint_reference": "agent.robinhood.com/mcp/trading",
+  "state": "proposal_only",
+  "enabled": true,
+  "authorization": "not_granted",
+  "execution_enabled": false,
+  "credential_collection": "forbidden",
+  "read_permissions": [
+    "read_public_sources",
+    "market_context",
+    "trade_proposals"
+  ],
+  "write_permissions": [],
+  "proposal_contract": "connectors/robinhood-mcp.yaml",
+  "proposal_api": "/api/robinhood/proposals",
+  "kill_switch": "/api/robinhood/kill-switch",
+  "notes": "Reference feed descriptor only. It records the guarded source and no-trade boundary; it does not connect to Robinhood, store credentials, or authorize orders.",
+  "updated_at": "2026-10-18T00:00:00Z"
+}
