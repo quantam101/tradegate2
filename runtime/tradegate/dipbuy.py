@@ -29,7 +29,11 @@ from dataclasses import asdict, dataclass, field
 
 @dataclass(frozen=True)
 class DipConfig:
-    universe: tuple[str, ...] = ("SPY", "QQQ", "IWM", "IBIT")
+    # IBIT (bitcoin ETF) was removed from the default universe on
+    # 2026-10-20: over the 2y truth-ledger window it contributed ~2% of
+    # dip-trade P&L while paying the same per-trade cost as every other
+    # slot. SPY/QQQ/IWM survives 20bps; including IBIT nearly halved it.
+    universe: tuple[str, ...] = ("SPY", "QQQ", "IWM")
     rsi_period: int = 2
     rsi_entry: float = 10.0
     trend_sma: int = 200

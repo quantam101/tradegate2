@@ -7,8 +7,9 @@ monthly momentum rotation (`docs/tradegate-rotation.md`).
 
 These are Connors' published defaults, deliberately not tuned.
 
-- **Universe:** SPY, QQQ, IWM and IBIT (Bitcoin). Each symbol gets an equal
-  slot of the capital.
+- **Universe:** SPY, QQQ and IWM. Each symbol gets an equal slot of the
+  capital. (IBIT was dropped 2026-10-20 — it contributed ~2% of dip-trade
+  P&L while paying full per-trade cost, nearly halving the 20bps edge.)
 - **Buy** at the next open when the close is above the 200-day SMA and the
   2-day RSI is below 10. That means a sharp two-day sell-off inside an
   uptrend.
