@@ -58,6 +58,8 @@ def run_daily(symbols: list[str], capital: float = 10000.0,
         })
 
     traded = [s for s in per_symbol if "strategy" in s]
+    if not traded:
+        raise RuntimeError(f"no daily bars fetched for any symbol: {per_symbol}")
     report = {
         "run_at": datetime.now(timezone.utc).isoformat(),
         "capital": capital,

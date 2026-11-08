@@ -83,6 +83,47 @@ def test_positions_match_and_diff(hist, tmp_path, monkeypatch):
     assert rot["diff_pct"] == pytest.approx(
         (1100.0 - rot["model_equity"]) / rot["model_equity"] * 100, abs=1e-3)
     assert isinstance(rot["positions_match"], bool)
+    # Regression: rotation model_positions must be USD market values, not
+    # target weights (which are always <= 1).
+    assert rot["model_positions"]
+    assert max(rot["model_positions"].values()) > 1
+
+
+def test_positions_from_trades_marks_net_qty_at_latest_close():
+    hist = {"SPY": [{"close": 100.0}], "QQQ": [{"close": 50.0}]}
+    trades = [
+        {"symbol": "SPY", "side": "BUY", "qty": 2.0},
+        {"symbol": "SPY", "side": "SELL", "qty": 0.5},
+        {"symbol": "QQQ", "side": "BUY", "qty": 1.0},
+        {"symbol": "QQQ", "side": "SELL", "qty": 1.0},
+    ]
+    assert tl._positions_from_trades(trades, hist) == {"SPY": 150.0}
+
+
+def test_position_value_diff_reports_common_symbol_notionals():
+    diff = tl._position_value_diff(
+        {"SPY": 100.0, "QQQ": 200.0},
+        {"SPY": 110.0, "QQQ": 200.0, "IWM": 50.0})
+    assert diff == {"SPY": {"model": 100.0, "broker": 110.0, "diff_pct": 10.0}}
+
+
+def test_broker_ok_records_position_value_diff(hist, tmp_path, monkeypatch):
+    for k in ("ALPACA_PAPER_KEY", "ALPACA_PAPER_SECRET",
+              "ALPACA_DIP_PAPER_KEY", "ALPACA_DIP_PAPER_SECRET"):
+        monkeypatch.setenv(k, "k" if "KEY" in k else "s")
+
+    def fake(key, secret):
+        return {"equity": 1000.0, "cash": 0.0,
+                "positions": {s: 1.0 for s in hist}}
+
+    monkeypatch.setattr(tl, "broker_snapshot", fake)
+    records = tl.run_truth_ledger(out_dir=tmp_path, bars_fn=_bars_fn(hist),
+                                  today="2026-01-05")
+    rot = next(r for r in records if r["strategy"] == "rotation")
+    assert rot["broker_status"] == "ok"
+    assert rot["position_value_diff"]
+    assert set(rot["position_value_diff"]) <= set(rot["model_positions"])
+    assert any("position value diffs" in n for n in rot["notes"])
 
 
 def test_all_data_failing_records_no_market_data(tmp_path, monkeypatch):
