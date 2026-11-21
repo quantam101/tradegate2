@@ -1,10 +1,7 @@
 name: TradeGate Truth Ledger
 
 on:
-  schedule:
-    # Weekdays at 21:45 UTC — after the paper runners (21:30) so the broker
-    # side reflects today's orders.
-    - cron: '45 21 * * 1-5'
+  # Trading schedules disabled — strategies under review.
   workflow_dispatch:
 
 permissions:

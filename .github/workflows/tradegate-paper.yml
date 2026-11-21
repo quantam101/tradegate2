@@ -1,10 +1,7 @@
 name: TradeGate Daily Paper Run
 
 on:
-  schedule:
-    # Weekdays at 21:30 UTC (~5:30pm ET, after the US close) — one real-data
-    # paper decision cycle per trading day.
-    - cron: '30 21 * * 1-5'
+  # Trading schedules disabled — strategies under review.
   workflow_dispatch:
 
 permissions:
