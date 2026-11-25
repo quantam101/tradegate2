@@ -67,13 +67,21 @@ _MAX_HEADLINE_CHARS = 300
 _MAX_OUTPUT_TOKENS = 20
 
 
+def _no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
+    """Reject repeated keys instead of json's silent last-wins."""
+    doc = dict(pairs)
+    if len(doc) != len(pairs):
+        raise ValueError("duplicate key in sentiment reply")
+    return doc
+
+
 def _parse_score(txt: str) -> float:
     """Strict wire contract: exactly ``{"score": <number in [-1, 1]>}``.
 
     Raises ValueError on anything else so the caller falls through to the next
     provider / the lexicon instead of trading on a guessed number.
     """
-    doc = json.loads(txt.strip())
+    doc = json.loads(txt.strip(), object_pairs_hook=_no_duplicate_keys)
     if not isinstance(doc, dict) or set(doc) != {"score"}:
         raise ValueError("sentiment reply is not a {'score': n} object")
     score = doc["score"]

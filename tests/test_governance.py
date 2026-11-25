@@ -313,7 +313,9 @@ def test_llm_score_accepts_only_schema_valid_json(monkeypatch):
     '{"score": "0.5"}',                               # wrong type
     '{"score": true}',
     '{"score": 0.5, "action": "buy"}',                # extra keys
+    '{"score": -0.9, "score": 0.9}',                  # duplicate key
     "[0.5]",
+    '[["score", 0.5]]',
     "",
 ])
 def test_llm_score_rejects_unverified_output(monkeypatch, tmp_path, reply):
