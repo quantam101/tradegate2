@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { MAX_OUTPUT_TOKENS, resolveMaxTokens } from '@/lib/llm-budget';
 
 const TF_BASE = (process.env.TOKENFORGE_API_URL || 'https://api.alreadyherellc.com').replace(/\/$/, '');
 const TF_API = `${TF_BASE}/proxy/chat`;
@@ -10,8 +11,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'TOKENFORGE_API_KEY not configured' }, { status: 503 });
   }
   const body = await req.json();
-  const { prompt, provider = 'anthropic', model = 'claude-haiku-4-5-20251001', max_tokens = 256 } = body;
+  const { prompt, provider = 'anthropic', model = 'claude-haiku-4-5-20251001' } = body;
   if (!prompt) return NextResponse.json({ error: 'prompt is required' }, { status: 400 });
+  const max_tokens = resolveMaxTokens(body.max_tokens);
+  if (max_tokens === null) {
+    return NextResponse.json(
+      { error: `max_tokens must be a positive integer (capped at ${MAX_OUTPUT_TOKENS})` },
+      { status: 400 },
+    );
+  }
   const res = await fetch(TF_API, {
     method: 'POST',
     headers: { 'X-TF-Key': apiKey, 'Content-Type': 'application/json' },
