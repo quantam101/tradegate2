@@ -38,9 +38,16 @@ export async function GET() {
     }
   } catch { /* no approvals yet */ }
 
+  const connectorMap = ((connectors as Record<string, unknown>)?.connectors ?? {}) as Record<string, Record<string, unknown>>;
+  const connectorList = Object.entries(connectorMap).map(([id, connector]) => ({
+    id,
+    name: typeof connector.name === 'string' ? connector.name : id,
+    ...connector,
+  }));
+
   return NextResponse.json({
     agents: (agents as Record<string, unknown>)?.agents ?? [],
-    connectors: (connectors as Record<string, unknown>)?.connectors ?? [],
+    connectors: connectorList,
     config,
     auditLog,
     approvals,

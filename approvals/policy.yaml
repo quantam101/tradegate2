@@ -18,6 +18,10 @@ always_requires_approval:
   - destructive_file_action
   - secret_rotation
   - permission_expansion
+  - brokerage_live_execution
+  - brokerage_credential_collection
+  - market_order_submission
+  - unsupported_asset_trade
 
 allowed_without_approval:
   - local_research_draft
