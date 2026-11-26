@@ -71,12 +71,14 @@ def _parse_llm_score(txt: str) -> float | None:
     guessed at, so an unverified number never reaches the sentiment file.
     """
     try:
-        doc = json.loads(txt)
+        # pairs, not a dict: a repeated "score" key must not collapse to one
+        doc = json.loads(txt, object_pairs_hook=list)
     except (ValueError, TypeError):
         return None
-    if not isinstance(doc, dict) or set(doc) != {"score"}:
+    if (not isinstance(doc, list) or len(doc) != 1
+            or not isinstance(doc[0], tuple) or doc[0][0] != "score"):
         return None
-    score = doc["score"]
+    score = doc[0][1]
     if isinstance(score, bool) or not isinstance(score, (int, float)):
         return None
     if not -1.0 <= score <= 1.0:  # also rejects NaN

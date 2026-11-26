@@ -83,6 +83,9 @@ def _fake_llm(monkeypatch, reply):
     '{"score": "0.5"}',                            # wrong type
     '{"score": 0.5, "action": "buy"}',             # extra keys
     "0.5",                                         # not the agreed object
+    '{"score": 0.5, "score": -1.0}',               # conflicting duplicate key
+    '[["score", 0.5]]',                            # array, not an object
+    '{"score": {"score": 0.5}}',                   # nested
 ])
 def test_sentiment_llm_reply_rejected_falls_back_to_lexicon(tmp_path, monkeypatch, reply):
     _fake_llm(monkeypatch, reply)
