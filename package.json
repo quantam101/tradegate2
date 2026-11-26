@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
+    "test:web": "node --experimental-strip-types --test tests/web/*.test.mjs",
     "test:runtime": "pytest -q",
     "security:scan": "bash scripts/security-check.sh",
     "healthcheck": "node scripts/agent-healthcheck.mjs"
