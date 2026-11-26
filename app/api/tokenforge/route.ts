@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { clampMaxTokens } from './budget';
 
-const TF_BASE = (process.env.TOKENFORGE_API_URL || 'https://api.alreadyherellc.com').replace(/\/$/, '');
-const TF_API = `${TF_BASE}/proxy/chat`;
-const TF_STATUS = `${TF_BASE}/health`;
+// api.alreadyherellc.com /proxy/chat was the paused standalone backend (dead).
+// The live zero-cost proxy is the tokenforge route on the ProfitEngine app.
+const TF_BASE = (process.env.TOKENFORGE_API_URL || 'https://app.alreadyherellc.com').replace(/\/$/, '');
+const TF_API = `${TF_BASE}/api/tokenforge`;
+// v3 serves status on the proxy route itself (GET, key-required); /health 404s there.
+const TF_STATUS = TF_API;
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.TOKENFORGE_API_KEY;
@@ -12,12 +15,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'TOKENFORGE_API_KEY not configured' }, { status: 503 });
   }
   const body = await req.json();
-  const { prompt, provider = 'anthropic', model = 'claude-haiku-4-5-20251001' } = body;
+  const { prompt, provider = 'auto', model } = body;
   if (!prompt) return NextResponse.json({ error: 'prompt is required' }, { status: 400 });
   const res = await fetch(TF_API, {
     method: 'POST',
     headers: { 'X-TF-Key': apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, provider, model, max_tokens: clampMaxTokens(body.max_tokens) }),
+    body: JSON.stringify({ prompt, provider, ...(model ? { model } : {}), max_tokens: clampMaxTokens(body.max_tokens) }),
   });
   return NextResponse.json(await res.json(), { status: res.status });
 }
