@@ -6,7 +6,8 @@ import { clampMaxTokens } from './budget';
 // The live zero-cost proxy is the tokenforge route on the ProfitEngine app.
 const TF_BASE = (process.env.TOKENFORGE_API_URL || 'https://app.alreadyherellc.com').replace(/\/$/, '');
 const TF_API = `${TF_BASE}/api/tokenforge`;
-const TF_STATUS = `${TF_BASE}/health`;
+// v3 serves status on the proxy route itself (GET, key-required); /health 404s there.
+const TF_STATUS = TF_API;
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.TOKENFORGE_API_KEY;
