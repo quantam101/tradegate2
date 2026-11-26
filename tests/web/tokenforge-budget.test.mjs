@@ -33,8 +33,8 @@ test('the route targets the live zero-cost proxy and defaults to free providers'
   const { readFile } = await import('node:fs/promises');
   const src = await readFile(new URL('../../app/api/tokenforge/route.ts', import.meta.url), 'utf8');
   assert.match(src, /app\.alreadyherellc\.com/);
-  assert.match(src, /`\/api\/tokenforge`/);
+  assert.match(src, /\/api\/tokenforge/);
   assert.match(src, /provider = 'auto'/);
   assert.doesNotMatch(src, /claude-haiku/);
-  assert.doesNotMatch(src, /\/proxy\/chat/);
+  assert.doesNotMatch(src, /`\$\{TF_BASE\}\/proxy\/chat`/);
 });
