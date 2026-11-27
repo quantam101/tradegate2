@@ -9,6 +9,7 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test:runtime": "pytest -q",
+    "test:web": "node --experimental-strip-types --test tests/web/*.test.mjs",
     "security:scan": "bash scripts/security-check.sh",
     "healthcheck": "node scripts/agent-healthcheck.mjs"
   },
